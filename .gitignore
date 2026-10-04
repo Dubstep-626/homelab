@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+rclone.conf
+*.bak*
+*.pre-vars
+data/
+db/
+logs/
+*.tgz
+nginx/certs/
+nginx/logs/
+tailscale/state/
+nut-server/flag/

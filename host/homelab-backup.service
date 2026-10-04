@@ -1,0 +1,8 @@
+[Unit]
+Description=Homelab encrypted backup to Google Drive
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homelab-backup.sh

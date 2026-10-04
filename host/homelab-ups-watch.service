@@ -1,0 +1,12 @@
+[Unit]
+Description=Homelab UPS flag watcher (NUT notify -> NAS poweroff)
+After=docker.service
+
+[Service]
+Environment=DRY_RUN=0
+Environment=SHUTDOWN_DELAY=45
+ExecStart=/usr/local/sbin/homelab-ups-watch.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

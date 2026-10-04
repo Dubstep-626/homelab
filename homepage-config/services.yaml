@@ -1,0 +1,199 @@
+---
+# Homepage services. Credentials live in .env as HOMEPAGE_VAR_* (never in this file).
+# siteMonitor/ping use Docker-internal names or LAN IPs, because *.lab.lan only resolves via Tailscale DNS.
+
+- Monitoring:
+    - Uptime Kuma:
+        href: http://status.lab.lan:8080
+        description: Service uptime + alerts (Discord)
+        icon: uptime-kuma.png
+        widget:
+          type: uptimekuma
+          url: http://uptime-kuma:3001
+          slug: homelab
+
+    - Grafana:
+        href: http://grafana.lab.lan:8080/d/rYdddlPWk/node-exporter-full?from=now-24h&to=now&timezone=browser&var-ds_prometheus=PBFA97CFB590B2093&var-job=node-exporter-t430&var-nodename=pve&var-node=192.168.0.10:9100&refresh=1m
+        description: Host dashboards (Node Exporter Full)
+        icon: grafana.png
+        siteMonitor: http://grafana:3000
+
+    - Prometheus:
+        description: Metrics store (scrape targets)
+        icon: prometheus.png
+        widget:
+          type: prometheus
+          url: http://prometheus:9090
+
+    - Netdata (Parent - all nodes):
+        href: http://netdata.lab.lan:8080
+        description: Real-time metrics - DXP2800, T430
+        icon: netdata.png
+        widget:
+          type: netdata
+          url: http://netdata:19999
+
+    - Scrutiny:
+        href: http://drives.lab.lan:8080
+        description: Drive S.M.A.R.T. health
+        icon: scrutiny.png
+        widget:
+          type: scrutiny
+          url: http://scrutiny:8080
+
+    - Dozzle:
+        href: http://logs.lab.lan:8080
+        description: Live container log viewer
+        icon: dozzle.png
+        siteMonitor: http://dozzle:8080
+
+    - UPS (CyberPower):
+        description: Battery + load via NUT -> Prometheus
+        icon: mdi-flash
+        widgets:
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=network_ups_tools_battery_charge
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Battery
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=network_ups_tools_ups_load
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Load
+                format: float
+                suffix: "%"
+
+- Control:
+    - Server Control:
+        href: http://control.lab.lan:8080
+        description: Power T430 (iDRAC) / start-stop VMs (Proxmox)
+        icon: mdi-server
+
+    - Proxmox VE:
+        href: https://<TAILSCALE_IP>:8006
+        description: Hypervisor - T430
+        icon: proxmox.png
+        ping: 192.168.0.10
+        # Prometheus-backed instead of the Proxmox API widget: these queries always
+        # return a value (or vector(0) when pve is off), so the tile never errors and
+        # never gets stuck in the retry backoff while the T430 is powered down.
+        widgets:
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22node-exporter-t430%22%7D
+            refreshInterval: 15000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Host
+                remap:
+                  - value: "1"
+                    to: Up
+                  - value: "0"
+                    to: Down
+                  - any: true
+                    to: Unknown
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20avg(rate(node_cpu_seconds_total%7Bjob%3D%22node-exporter-t430%22%2Cmode%3D%22idle%22%7D%5B2m%5D)))%20%2A%20100%20or%20vector(0)
+            refreshInterval: 15000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: CPU
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20node_memory_MemAvailable_bytes%7Bjob%3D%22node-exporter-t430%22%7D%20%2F%20node_memory_MemTotal_bytes%7Bjob%3D%22node-exporter-t430%22%7D)%20%2A%20100%20or%20vector(0)
+            refreshInterval: 15000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Memory
+                format: float
+                suffix: "%"
+
+    - iDRAC (T430):
+        href: https://192.168.0.20
+        description: Out-of-band management
+        icon: idrac.png
+        ping: 192.168.0.20
+        widget:
+          type: customapi
+          refreshInterval: 600000
+          url: https://192.168.0.20/redfish/v1/Systems/System.Embedded.1
+          username: "{{HOMEPAGE_VAR_IDRAC_USER}}"
+          password: "{{HOMEPAGE_VAR_IDRAC_PASS}}"
+          mappings:
+            - field: PowerState
+              label: Power
+            - field: Status.Health
+              label: Health
+
+- Cameras:
+    - Scrypted:
+        href: http://scrypted.lab.lan:8080
+        description: Blink camera live view (4x Mini/Mini 2)
+        icon: scrypted.png
+        ping: scrypted
+
+- Network:
+    - UniFi Network (UDR7):
+        href: https://192.168.0.1
+        description: Router/firewall/switch admin console
+        icon: unifi.png
+        ping: 192.168.0.1
+        widget:
+          type: unifi
+          url: https://192.168.0.1
+          username: "{{HOMEPAGE_VAR_UNIFI_USER}}"
+          password: "{{HOMEPAGE_VAR_UNIFI_PASS}}"
+          site: Default
+
+    - Tailscale:
+        href: https://login.tailscale.com/admin/machines
+        description: Mesh VPN admin console
+        icon: tailscale.png
+
+    - Fail2ban:
+        description: Intrusion prevention (no web UI)
+        icon: fail2ban.png
+
+- Infrastructure:
+    - Cloud Backup (rclone):
+        href: http://status.lab.lan:8080
+        description: Encrypted weekly to Google Drive (Sun 04:00, keeps 3) - status in Kuma
+        icon: mdi-cloud-upload
+
+    - Watchtower:
+        description: Update checks only (monitor-only, no auto-restart)
+        icon: watchtower.png
+
+    - Diun:
+        description: Update notifications
+        icon: diun.png
+
+    - Nginx:
+        description: Reverse proxy
+        icon: nginx.png
+        siteMonitor: http://nginx:80
