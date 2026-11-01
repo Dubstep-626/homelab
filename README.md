@@ -1,6 +1,6 @@
 # Homelab: monitored, backed-up, tailnet-only
 
-A two-box homelab built around a **UGREEN DXP2800 NAS** (Docker stack, monitoring, UPS handling, DNS) and a **Dell PowerEdge T430** running Proxmox. Everything is reached over **Tailscale**; nothing is exposed to the internet.
+A homelab built around a **UGREEN DXP2800 NAS** (Docker stack, monitoring, UPS handling, DNS) and a **Dell PowerEdge T430** running Proxmox, now being reorganized into power tiers: a small always-on core and big machines that run only on demand (see [Where it's going](#where-its-going-power-tiered-layout)). Everything is reached over **Tailscale**; nothing is exposed to the internet.
 
 I built this to practice the unglamorous parts of running infrastructure: monitoring that actually alerts, backups that are encrypted *and* verified, least-privilege service accounts, and a documented restore path. My focus is ICS/SCADA security, so the design leans on ideas that carry over to OT: out-of-band management, a sensor-to-alarm-to-action loop for power loss, and minimal exposure by default.
 
@@ -11,9 +11,12 @@ I built this to practice the unglamorous parts of running infrastructure: monito
 | Role | Hardware | Notes |
 |---|---|---|
 | NAS / Docker host | UGREEN DXP2800 (Intel N100), UGOS (Debian 12 base) | One 4 TB WD Red Plus (`/volume1`); system on eMMC |
-| Hypervisor | Dell PowerEdge T430, Proxmox VE | iDRAC8 for out-of-band control; PERC H730 with SSD RAID 6 volumes and a separate HDD volume |
+| Services host (migration in progress) | Lenovo ThinkCentre M920q Tiny (i5-8600T, 32 GB, 1 TB NVMe) | Always-on Docker host taking over the stack from the NAS, plus NetBox |
+| Hypervisor | Dell PowerEdge T430 (2x Xeon E5-2630 v3), Proxmox VE | On demand. iDRAC8 (shared LOM) for out-of-band control; PERC H730 with SSD RAID 6 volumes and a separate HDD volume; RAM going from 32 GB to 96 GB |
+| Workstation | X570 (Ryzen 9 3900X, RTX 4070) | On demand via Wake-on-LAN; motherboard swap pending; future local LLM host |
+| OT lab (planned) | Donated laptops | Physical OpenPLC / HMI / attacker segment for the security VMs to watch |
 | Network | UniFi Dream Router 7 + Flex 2.5G switch | UniFi data exported to Prometheus via unpoller |
-| Power | CyberPower SL700U UPS | USB to the NAS; NAS is the NUT primary, Proxmox host is a NUT secondary |
+| Power | CyberPower SL700U UPS | USB to the NAS; NAS is the NUT primary, Proxmox host is a NUT secondary. Planned: NAS, T430 and M920q on battery outlets; switches powered from the UPS USB ports |
 | Cameras | 4x Blink Mini | Bridged to a local live-view dashboard with Scrypted |
 
 ## Architecture
@@ -61,6 +64,48 @@ flowchart LR
   BK -- rclone crypt --> GD[(Google Drive)]
   BK -- push heartbeat --> KM
 ```
+
+## Where it's going: power-tiered layout
+
+The NAS's 8 GB of RAM is full, and the T430 idles at well over 100 W. The plan is to keep only what must stay up on the most efficient hardware, and wake everything else when I'm actually using it.
+
+```mermaid
+flowchart LR
+  C[Desktop / laptop / phone] -- Tailscale --> M920
+
+  subgraph AO[Always on, roughly 20-35 W]
+    M920[M920q - Docker services host<br/>nginx, dnsmasq, Homepage, Grafana,<br/>Prometheus, Uptime Kuma, NetBox, control-api]
+    NAS[DXP2800 NAS<br/>storage, backups, NUT primary]
+  end
+
+  subgraph OD[On demand]
+    T430[T430 - Proxmox<br/>Security Onion, Wazuh, Graylog]
+    X570[X570 workstation<br/>future local LLM]
+    OT[OT lab laptops<br/>OpenPLC, HMI, attacker]
+  end
+
+  UPS[(CyberPower UPS)] -- USB --> NAS
+  NAS -. NUT .-> M920
+  NAS -. NUT secondary .-> T430
+  M920 -- Redfish power on/off --> T430
+  M920 -- Wake-on-LAN --> X570
+  M920 -- metrics + alerts --> DISC[Discord]
+  NAS -- rclone crypt --> GD[(Google Drive)]
+  OT -- Modbus TCP traffic --> T430
+```
+
+- **Always on:** the M920q runs the services (it idles around 10 W), and the NAS drops back to being a storage appliance.
+- **On demand:** Homepage gets Lab Up / Lab Down buttons that call the control API to start and gracefully stop the T430, its VMs and the X570.
+- **Measured:** UPS load from NUT is graphed in Grafana, so each tier's power cost is visible.
+- **Quiet when off:** Kuma and Prometheus alerts for on-demand hosts are paused during planned shutdowns.
+
+### Roadmap
+
+1. Power both switches from the UPS USB ports to free battery outlets
+2. Migrate the stack from the NAS to the M920q (in parallel: install the T430 RAM upgrade)
+3. X570 motherboard swap
+4. Rebuild the donated laptops as a physical OT segment
+5. Local camera viewing (Scrypted)
 
 ## Services
 
