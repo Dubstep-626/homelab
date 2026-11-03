@@ -2,6 +2,151 @@
 # Homepage services. Credentials live in .env as HOMEPAGE_VAR_* (never in this file).
 # siteMonitor/ping use Docker-internal names or LAN IPs, because *.lab.lan only resolves via Tailscale DNS.
 
+- Hosts:
+    - M920q:
+        description: Services host - Debian 13
+        icon: mdi-server
+        ping: 192.168.0.91
+        widgets:
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22node-exporter-m920q%22%7D%20or%20vector(0)
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Status
+                remap:
+                  - value: "1"
+                    to: Up
+                  - value: "0"
+                    to: Down
+                  - any: true
+                    to: Unknown
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20node_memory_MemAvailable_bytes%7Bjob%3D%22node-exporter-m920q%22%7D%20%2F%20node_memory_MemTotal_bytes%7Bjob%3D%22node-exporter-m920q%22%7D)%20%2A%20100
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: RAM
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20node_filesystem_avail_bytes%7Bjob%3D%22node-exporter-m920q%22%2Cmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size_bytes%7Bjob%3D%22node-exporter-m920q%22%2Cmountpoint%3D%22%2F%22%7D)%20%2A%20100
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Storage
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=max(node_hwmon_temp_celsius%7Bjob%3D%22node-exporter-m920q%22%7D)%20%2A%209%20%2F%205%20%2B%2032
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Temp
+                format: float
+                suffix: "°F"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(count(up%7Bjob%3D~%22node-exporter-m920q%7Ccadvisor-m920q%7Cunpoller%7Cprometheus%22%7D%20%3D%3D%200)%20or%20vector(0))%20%2B%20(count((1%20-%20node_filesystem_avail_bytes%7Bjob%3D%22node-exporter-m920q%22%2Cmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size_bytes%7Bjob%3D%22node-exporter-m920q%22%2Cmountpoint%3D%22%2F%22%7D)%20%3E%200.9)%20or%20vector(0))%20%2B%20(count(node_hwmon_temp_celsius%7Bjob%3D%22node-exporter-m920q%22%7D%20%3E%2085)%20or%20vector(0))
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Faults
+                remap:
+                  - value: "0"
+                    to: None
+
+    - DXP2800 NAS:
+        description: Storage, backups, UPS (NUT primary)
+        icon: ugreen.png
+        ping: 192.168.0.172
+        widgets:
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22node-exporter-nas%22%7D%20or%20vector(0)
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Status
+                remap:
+                  - value: "1"
+                    to: Up
+                  - value: "0"
+                    to: Down
+                  - any: true
+                    to: Unknown
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20node_memory_MemAvailable_bytes%7Bjob%3D%22node-exporter-nas%22%7D%20%2F%20node_memory_MemTotal_bytes%7Bjob%3D%22node-exporter-nas%22%7D)%20%2A%20100
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: RAM
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20node_filesystem_avail_bytes%7Bjob%3D%22node-exporter-nas%22%2Cmountpoint%3D%22%2Fvolume1%22%7D%20%2F%20node_filesystem_size_bytes%7Bjob%3D%22node-exporter-nas%22%2Cmountpoint%3D%22%2Fvolume1%22%7D)%20%2A%20100
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Storage
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=max(node_hwmon_temp_celsius%7Bjob%3D%22node-exporter-nas%22%7D)%20%2A%209%20%2F%205%20%2B%2032
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Temp
+                format: float
+                suffix: "°F"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(count(smartctl_device_smart_status%20%3D%3D%200)%20or%20vector(0))%20%2B%20(count(network_ups_tools_ups_status%7Bflag%3D%22OL%22%7D%20%3D%3D%200)%20or%20vector(0))%20%2B%20(count(up%7Binstance%3D~%22192.168.0.172%3A.%2A%22%7D%20%3D%3D%200)%20or%20vector(0))%20%2B%20(count((1%20-%20node_filesystem_avail_bytes%7Bjob%3D%22node-exporter-nas%22%2Cmountpoint%3D%22%2Fvolume1%22%7D%20%2F%20node_filesystem_size_bytes%7Bjob%3D%22node-exporter-nas%22%2Cmountpoint%3D%22%2Fvolume1%22%7D)%20%3E%200.9)%20or%20vector(0))%20%2B%20(count(node_hwmon_temp_celsius%7Bjob%3D%22node-exporter-nas%22%7D%20%3E%2085)%20or%20vector(0))
+            refreshInterval: 30000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Faults
+                remap:
+                  - value: "0"
+                    to: None
+
 - Monitoring:
     - Uptime Kuma:
         href: http://status.lab.lan:8080
