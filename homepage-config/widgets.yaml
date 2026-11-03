@@ -1,11 +1,16 @@
 ---
-# For configuration options and examples, please see:
 # https://gethomepage.dev/configs/info-widgets/
 
 - resources:
+    label: M920q
     cpu: true
     memory: true
     disk: /
+    cputemp: true
+    tempmin: 0
+    tempmax: 100
+    units: imperial
+    uptime: true
 
 - search:
     provider: duckduckgo
