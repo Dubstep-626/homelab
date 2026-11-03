@@ -1,6 +1,6 @@
 #!/bin/sh
 # Keep dnsmasq published on the tailnet address (it can start before tailscale0 exists at boot)
-TSIP=<TAILSCALE_IP>
+TSIP=<NAS_TAILSCALE_IP>
 PROJ=/volume1/docker/homelab-bundle
 while true; do
   if ip -4 -o addr show 2>/dev/null | grep -q "$TSIP/"; then

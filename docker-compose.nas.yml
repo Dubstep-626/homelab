@@ -1,0 +1,255 @@
+# DXP2800 — storage, UPS, and host-bound services only.
+# Everything user-facing moved to the M920q (see docker-compose.m920q.yml).
+# Exporters/agents publish on the NAS LAN IP only so the M920q can reach them.
+
+name: homelab-bundle
+
+networks:
+  homelab:
+    driver: bridge
+
+volumes:
+  netdata-config:
+  netdata-lib:
+  netdata-cache:
+  fail2ban-config:
+  scrutiny-config:
+  scrutiny-influxdb:
+  diun-data:
+  nut-server-config:
+
+services:
+
+  # --- Remote access ---------------------------------------------------
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: unless-stopped
+    hostname: dxp2800
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_ACCEPT_DNS=false
+      - TS_USERSPACE=false
+    volumes:
+      - ./tailscale/state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    network_mode: host
+
+  # Split-DNS for *.lab.lan over Tailscale (bound to the NAS tailscale IP)
+  dnsmasq:
+    build: ./dnsmasq
+    container_name: dnsmasq
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "<NAS_TAILSCALE_IP>:53:53/udp"
+      - "<NAS_TAILSCALE_IP>:53:53/tcp"
+    volumes:
+      - ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+
+  # --- Security --------------------------------------------------------
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - fail2ban-config:/data
+      # kept so any existing nginx jail doesn't fail on a missing logpath
+      - ./nginx/logs:/var/log/nginx:ro
+      - /var/log:/var/log:ro
+
+  # --- Container lifecycle (this host only) ----------------------------
+  watchtower:
+    image: nickfedor/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    networks:
+      - homelab
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_MONITOR_ONLY=true
+
+  diun:
+    image: crazymax/diun:latest
+    container_name: diun
+    restart: unless-stopped
+    networks:
+      - homelab
+    command: serve
+    volumes:
+      - diun-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=America/Chicago
+      - DIUN_WATCH_WORKERS=20
+      - DIUN_WATCH_SCHEDULE=0 */6 * * *
+      - DIUN_PROVIDERS_DOCKER=true
+
+  # --- Remote visibility for the M920q ---------------------------------
+  # Read-only Docker API so Kuma + Homepage on the M920q can see NAS containers
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - homelab
+    environment:
+      - CONTAINERS=1
+      - INFO=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "192.168.0.172:2375:2375"
+
+  # Feeds NAS container logs to Dozzle on the M920q
+  dozzle-agent:
+    image: amir20/dozzle:latest
+    container_name: dozzle-agent
+    restart: unless-stopped
+    command: agent
+    environment:
+      - DOZZLE_HOSTNAME=dxp2800
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "192.168.0.172:7007:7007"
+
+  # --- NAS host / container metrics ------------------------------------
+  netdata:
+    image: netdata/netdata:latest
+    container_name: netdata
+    restart: unless-stopped
+    hostname: dxp2800
+    networks:
+      - homelab
+    ports:
+      - "192.168.0.172:19999:19999"
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - /:/host/root:ro,rslave
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - netdata-config:/etc/netdata
+      - ./netdata/stream.conf:/etc/netdata/stream.conf:ro
+      - netdata-lib:/var/lib/netdata
+      - netdata-cache:/var/cache/netdata
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    networks:
+      - homelab
+    pid: host
+    ports:
+      - "192.168.0.172:9100:9100"
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - "--path.rootfs=/host"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "192.168.0.172:8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - ${DOCKER_ROOT:-/volume1/@docker}:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    privileged: true
+
+  # --- Drive health ----------------------------------------------------
+  scrutiny:
+    image: ghcr.io/analogj/scrutiny:master-omnibus
+    container_name: scrutiny
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "192.168.0.172:8082:8080"
+    cap_add:
+      - SYS_RAWIO
+      - SYS_ADMIN
+    volumes:
+      - scrutiny-config:/opt/scrutiny/config
+      - scrutiny-influxdb:/opt/scrutiny/influxdb
+      - /run/udev:/run/udev:ro
+    devices:
+      - /dev/sda
+
+  smartctl-exporter:
+    image: prometheuscommunity/smartctl-exporter:latest
+    container_name: smartctl-exporter
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "192.168.0.172:9633:9633"
+    privileged: true
+    user: root
+    devices:
+      - /dev/sda:/dev/sda
+
+  # --- UPS (cable is on this box) --------------------------------------
+  nut-server:
+    image: instantlinux/nut-upsd:2.8.1-r0
+    container_name: nut-server
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "192.168.0.172:3493:3493"
+    device_cgroup_rules:
+      - 'c 189:* rwm'
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - nut-server-config:/etc/nut
+      - ./nut-server/flag:/tmp/nut-flag
+      - ./nut-server/notify.sh:/usr/local/bin/notify.sh:ro
+    environment:
+      - NAME=${NUT_UPS_NAME}
+      - API_USER=${NUT_MON_USER}
+      - API_PASSWORD=${NUT_MON_PASSWORD}
+      - DRIVER=usbhid-ups
+      - NOTIFYCMD=/usr/local/bin/notify.sh
+
+  nut-exporter:
+    image: druggeri/nut_exporter:latest
+    container_name: nut-exporter
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "192.168.0.172:9199:9199"
+    environment:
+      - NUT_EXPORTER_SERVER=nut-server
+      - NUT_EXPORTER_USERNAME=${NUT_MON_USER}
+      - NUT_EXPORTER_PASSWORD=${NUT_MON_PASSWORD}

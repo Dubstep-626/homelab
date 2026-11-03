@@ -14,7 +14,7 @@ trap cleanup EXIT
 mkdir -p "$STAGE/volumes" "$STAGE/host"
 
 log "start $STAMP"
-tar czf "$STAGE/stack.tar.gz" --exclude=homelab-bundle/rclone -C /volume1/docker homelab-bundle
+tar czf "$STAGE/stack.tar.gz" --exclude=homelab-bundle/rclone -C /volume1/docker homelab-bundle m920q-backup
 cp /usr/local/sbin/homelab-*.sh /etc/systemd/system/homelab-*.service "$STAGE/host/"
 for v in $(docker volume ls -q); do
   case "$v" in *prometheus-data|*netdata-cache|*netdata-lib|*scrutiny-influxdb) continue;; esac

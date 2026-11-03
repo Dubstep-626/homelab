@@ -31,7 +31,7 @@
         icon: netdata.png
         widget:
           type: netdata
-          url: http://netdata:19999
+          url: http://192.168.0.172:19999
 
     - Scrutiny:
         href: http://drives.lab.lan:8080
@@ -39,13 +39,13 @@
         icon: scrutiny.png
         widget:
           type: scrutiny
-          url: http://scrutiny:8080
+          url: http://192.168.0.172:8082
 
     - Dozzle:
         href: http://logs.lab.lan:8080
         description: Live container log viewer
         icon: dozzle.png
-        siteMonitor: http://dozzle:8080
+        siteMonitor: http://dozzle:8888
 
     - UPS (CyberPower):
         description: Battery + load via NUT -> Prometheus

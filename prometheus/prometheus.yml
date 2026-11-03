@@ -8,37 +8,48 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # DXP2800 (this NAS) host metrics — CPU, RAM, disk, network
-  - job_name: "node-exporter-nas"
+  # --- M920q (local containers, same compose network) ---
+  - job_name: "node-exporter-m920q"
     static_configs:
       - targets: ["node-exporter:9100"]
         labels:
+          host: "m920q"
+
+  - job_name: "cadvisor-m920q"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          host: "m920q"
+
+  - job_name: "unpoller"
+    static_configs:
+      - targets: ["unpoller:9130"]
+
+  # --- DXP2800 NAS (exporters published on its LAN IP) ---
+  - job_name: "node-exporter-nas"
+    static_configs:
+      - targets: ["192.168.0.172:9100"]
+        labels:
           host: "nas"
 
-  # T430 (Proxmox host), native node_exporter
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["192.168.0.172:8081"]
+        labels:
+          host: "nas"
+
+  - job_name: "smartctl-exporter"
+    static_configs:
+      - targets: ["192.168.0.172:9633"]
+
+  - job_name: "nut-exporter"
+    metrics_path: /ups_metrics
+    static_configs:
+      - targets: ["192.168.0.172:9199"]
+
+  # --- On-demand boxes ---
   - job_name: "node-exporter-t430"
     static_configs:
       - targets: ["192.168.0.10:9100"]   # T430 / Proxmox host; down whenever the T430 is powered off
         labels:
           host: "t430"
-
-  # Per-container CPU/mem/network stats (Docker, on the NAS)
-  - job_name: "cadvisor"
-    static_configs:
-      - targets: ["cadvisor:8080"]
-
-  # Drive S.M.A.R.T. health, exported in Prometheus format
-  - job_name: "smartctl-exporter"
-    static_configs:
-      - targets: ["smartctl-exporter:9633"]
-
-  # UPS status/runtime, pulled from the NUT server container (also on the NAS)
-  - job_name: "nut-exporter"
-    metrics_path: /ups_metrics
-    static_configs:
-      - targets: ["nut-exporter:9199"]
-
-  # UniFi controller (UDR7) — network traffic, clients, switch port stats
-  - job_name: "unpoller"
-    static_configs:
-      - targets: ["unpoller:9130"]

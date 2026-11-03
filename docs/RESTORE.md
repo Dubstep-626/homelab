@@ -1,6 +1,6 @@
 # Restore runbook
 
-Rebuild the NAS stack from the encrypted weekly backup in Google Drive.
+Rebuild either host's stack from the encrypted weekly backup in Google Drive. The NAS archive also carries the M920q's latest nightly export in `m920q-backup/`.
 
 ## What you need (none of this is in the backup)
 
@@ -57,3 +57,14 @@ Recreate `/etc/homelab-backup.env` (chmod 600) with `KUMA_PUSH_URL` from Uptime 
 - Uptime Kuma: all monitors green; send a Discord test notification.
 - Homepage tiles live; Prometheus targets up (the T430 job is down whenever that host is off, which is expected).
 - Run `sudo systemctl start homelab-backup.service` once and confirm the push heartbeat arrives.
+
+## Rebuilding the M920q
+
+The NAS archive's `stack.tar.gz` contains `m920q-backup/`, which holds the M920q's own `stack.tar.gz` plus one tarball per volume (Prometheus is not backed up; it starts empty).
+
+1. Fresh Debian 13, Docker from Docker's apt repo, Tailscale (disable key expiry), then `sudo mkdir -p /opt/homelab /var/log/nginx`.
+2. `sudo tar -xzf stack.tar.gz -C /opt/homelab && sudo chown -R $USER: /opt/homelab/homelab-bundle`
+3. Restore each volume the same way as step 3 above, using `homelab-bundle_<name>` as the volume name.
+4. `cd /opt/homelab/homelab-bundle && docker compose up -d`
+5. Re-create `host/m920q/`: `nut-client` with `upsmon.conf.example`, the backup script and timer, and the `/root/.ssh/id_ed25519_nas` key (add its public key to the NAS user's `authorized_keys`).
+6. If the M920q's tailnet IP changed, update `address=/lab.lan/...` in the NAS's `dnsmasq/dnsmasq.conf` and recreate dnsmasq.
