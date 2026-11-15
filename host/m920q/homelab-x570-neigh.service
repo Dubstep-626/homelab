@@ -1,0 +1,16 @@
+# /etc/systemd/system/homelab-x570-neigh.service  (on the M920q)
+[Unit]
+Description=Permanent neighbor entry for X570 Wake-on-LAN
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=X570_IP=192.168.0.24
+Environment=X570_MAC=d4:5d:64:56:41:b1
+ExecStart=/usr/local/sbin/homelab-x570-neigh.sh
+ExecStop=/usr/local/sbin/homelab-x570-neigh.sh stop
+
+[Install]
+WantedBy=multi-user.target

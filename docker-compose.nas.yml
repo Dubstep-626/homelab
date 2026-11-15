@@ -81,6 +81,10 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_MONITOR_ONLY=true
+      - WATCHTOWER_HTTP_API_METRICS=true
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN}
+    ports:
+      - "192.168.0.172:8085:8080"   # LAN IP only - scraped by Homepage on the M920q
 
   diun:
     image: crazymax/diun:latest

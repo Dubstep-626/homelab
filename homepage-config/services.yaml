@@ -278,6 +278,53 @@
                 format: float
                 suffix: "%"
 
+    - X570 Workstation:
+        href: http://control.lab.lan:8080/x570/
+        description: deus-vult - Wake / Shut down (Fedora)
+        icon: mdi-desktop-tower
+        widgets:
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22node-exporter-x570%22%7D%20or%20vector(0)
+            refreshInterval: 15000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Host
+                remap:
+                  - value: "1"
+                    to: Up
+                  - value: "0"
+                    to: Down
+                  - any: true
+                    to: Unknown
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20avg(rate(node_cpu_seconds_total%7Bjob%3D%22node-exporter-x570%22%2Cmode%3D%22idle%22%7D%5B2m%5D)))%20%2A%20100%20or%20vector(0)
+            refreshInterval: 15000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: CPU
+                format: float
+                suffix: "%"
+          - type: customapi
+            url: http://prometheus:9090/api/v1/query?query=(1%20-%20node_memory_MemAvailable_bytes%7Bjob%3D%22node-exporter-x570%22%7D%20%2F%20node_memory_MemTotal_bytes%7Bjob%3D%22node-exporter-x570%22%7D)%20%2A%20100%20or%20vector(0)
+            refreshInterval: 15000
+            mappings:
+              - field:
+                  data:
+                    result:
+                      0:
+                        value: 1
+                label: Memory
+                format: float
+                suffix: "%"
+
     - iDRAC (T430):
         href: https://192.168.0.20
         description: Out-of-band management
@@ -330,9 +377,21 @@
         description: Encrypted weekly to Google Drive (Sun 04:00, keeps 3) - status in Kuma
         icon: mdi-cloud-upload
 
-    - Watchtower:
-        description: Update checks only (monitor-only, no auto-restart)
+    - Watchtower (M920q):
+        description: Update checks (monitor-only) - Updated = updates available
         icon: watchtower.png
+        widget:
+          type: watchtower
+          url: http://watchtower:8080
+          key: "{{HOMEPAGE_VAR_WATCHTOWER_TOKEN}}"
+
+    - Watchtower (NAS):
+        description: Update checks (monitor-only) - Updated = updates available
+        icon: watchtower.png
+        widget:
+          type: watchtower
+          url: http://192.168.0.172:8085
+          key: "{{HOMEPAGE_VAR_WATCHTOWER_TOKEN}}"
 
     - Diun:
         description: Update notifications

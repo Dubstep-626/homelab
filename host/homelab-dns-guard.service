@@ -1,11 +1,13 @@
 [Unit]
+StartLimitIntervalSec=0
 Description=Keep dnsmasq published on the Tailscale address
 After=docker.service network-online.target
-Requires=docker.service
+Wants=docker.service
 
 [Service]
 ExecStart=/usr/local/sbin/homelab-dns-guard.sh
 Restart=always
+RestartSec=15
 
 [Install]
 WantedBy=multi-user.target

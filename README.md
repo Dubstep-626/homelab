@@ -13,7 +13,7 @@ I built this to practice the unglamorous parts of running infrastructure: monito
 | Services host | Lenovo ThinkCentre M920q Tiny (i5-8600T, 32 GB, 1 TB NVMe), Debian 13 | Always on. Runs the user-facing stack: nginx, Homepage, Grafana, Prometheus, Uptime Kuma, Dozzle, Scrypted, control-api |
 | NAS | UGREEN DXP2800 (Intel N100), UGOS (Debian 12 base) | Always on. One 4 TB WD Red Plus (`/volume1`); keeps NUT, split DNS, drive health and the exporters that report on its own hardware |
 | Hypervisor | Dell PowerEdge T430 (2x Xeon E5-2630 v3), Proxmox VE | On demand. iDRAC8 (shared LOM) for out-of-band control; PERC H730 with SSD RAID 6 volumes and a separate HDD volume; 96 GB RAM |
-| Workstation | X570 (Ryzen 9 3900X, RTX 4070) | On demand via Wake-on-LAN; motherboard swap pending; future local LLM host |
+| Workstation | X570 (Crosshair VIII Hero, Ryzen 9 3900X, RTX 4070 SUPER), Fedora/Windows dual boot | On demand: Wake-on-LAN from the M920q, poweroff over Tailscale SSH; metrics via node-exporter; future local LLM host |
 | OT lab (planned) | Donated laptops | Physical OpenPLC / HMI / attacker segment for the security VMs to watch |
 | Network | UniFi Dream Router 7 + Flex 2.5G switch | UniFi data exported to Prometheus via unpoller |
 | Power | CyberPower SL700U UPS | USB to the NAS; NAS is the NUT primary, the M920q and Proxmox host are NUT secondaries. NAS, T430 and M920q on battery outlets |
@@ -113,7 +113,7 @@ flowchart LR
 
 1. ~~Power both switches from the UPS USB ports to free battery outlets~~
 2. ~~Migrate the stack from the NAS to the M920q~~ (done: two compose projects, data volumes moved, NUT secondary and nightly backup added); NetBox next
-3. X570 motherboard swap
+3. ~~X570 motherboard swap~~ (done: Win11 + Fedora 45, WoL from Homepage, Prometheus metrics)
 4. Rebuild the donated laptops as a physical OT segment
 5. Local camera viewing (Scrypted)
 
@@ -126,7 +126,7 @@ flowchart LR
 | Power | NUT server (pinned image), nut-exporter, host-side watcher | UPS telemetry and graceful shutdown |
 | Dashboard | Homepage | One front page with live widgets (Prometheus-backed, so tiles keep working when a host is off) |
 | Operations | Watchtower (monitor-only), Diun, Dozzle | Update visibility without unattended updates; live container logs |
-| Control | control-api | Token-protected start/stop of Proxmox VMs and iDRAC power actions |
+| Control | control-api | Token-protected start/stop of Proxmox VMs and iDRAC power actions; token-free X570 Wake/Shut down page (tailnet-only, poweroff via Tailscale SSH - no keys) |
 | Cameras | Scrypted | Persistent local live view for Blink cameras |
 
 ## Design decisions

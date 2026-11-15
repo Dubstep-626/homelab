@@ -53,3 +53,9 @@ scrape_configs:
       - targets: ["192.168.0.10:9100"]   # T430 / Proxmox host; down whenever the T430 is powered off
         labels:
           host: "t430"
+
+  - job_name: "node-exporter-x570"
+    static_configs:
+      - targets: ["192.168.0.24:9100"]   # X570 / deus-vult (node-exporter container); down when off or in Windows
+        labels:
+          host: "x570"

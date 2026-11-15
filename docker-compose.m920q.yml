@@ -59,6 +59,8 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_MONITOR_ONLY=true
+      - WATCHTOWER_HTTP_API_METRICS=true          # Homepage update counter (internal only, no port)
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN}
 
   diun:
     image: crazymax/diun:latest
@@ -196,6 +198,7 @@ services:
       - HOMEPAGE_VAR_IDRAC_PASS=${IDRAC_RO_PASS}
       - HOMEPAGE_VAR_UNIFI_USER=${UNIFI_USER}
       - HOMEPAGE_VAR_UNIFI_PASS=${UNIFI_PASSWORD}
+      - HOMEPAGE_VAR_WATCHTOWER_TOKEN=${WATCHTOWER_API_TOKEN}
 
   control-api:
     build: ./control-api
@@ -213,6 +216,13 @@ services:
       - IDRAC_USER=${IDRAC_USER}
       - IDRAC_PASS=${IDRAC_PASS}
       - IDRAC_SYSTEM_ID=${IDRAC_SYSTEM_ID:-System.Embedded.1}
+      # X570: WoL (unicast via permanent ARP on the host) + Tailscale-SSH poweroff
+      - X570_MAC=${X570_MAC}
+      - X570_LAN_IP=${X570_LAN_IP}
+      - X570_TS_IP=${X570_TS_IP}
+      - X570_USER=${X570_USER}
+    volumes:
+      - ./control-api/ssh:/root/.ssh   # known_hosts only - Tailscale SSH, no keys
 
   # --- Cameras ---------------------------------------------------------
   scrypted:
