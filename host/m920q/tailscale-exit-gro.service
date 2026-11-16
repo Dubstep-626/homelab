@@ -1,0 +1,13 @@
+# /etc/systemd/system/tailscale-exit-gro.service  (M920q)
+[Unit]
+Description=UDP GRO forwarding tuning for the Tailscale exit node
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tailscale-exit-gro.sh
+
+[Install]
+WantedBy=multi-user.target

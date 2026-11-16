@@ -66,5 +66,6 @@ The NAS archive's `stack.tar.gz` contains `m920q-backup/`, which holds the M920q
 2. `sudo tar -xzf stack.tar.gz -C /opt/homelab && sudo chown -R $USER: /opt/homelab/homelab-bundle`
 3. Restore each volume the same way as step 3 above, using `homelab-bundle_<name>` as the volume name.
 4. `cd /opt/homelab/homelab-bundle && docker compose up -d`
-5. Re-create `host/m920q/`: `nut-client` with `upsmon.conf.example`, the backup script and timer, and the `/root/.ssh/id_ed25519_nas` key (add its public key to the NAS user's `authorized_keys`).
-6. If the M920q's tailnet IP changed, update the `*.lab.lan` / `lab.lan` DNS rewrites in AdGuard (primary) and Tailscale's global nameserver entry; adguardhome-sync pushes the rewrite to the NAS.
+5. Exit node: `sudo cp host/m920q/99-tailscale.conf /etc/sysctl.d/ && sudo sysctl --system`, install `tailscale-exit-gro.sh` to `/usr/local/sbin/` and enable `tailscale-exit-gro.service` (needs `ethtool`), then `sudo tailscale set --advertise-exit-node` and approve it in the admin console.
+6. Re-create `host/m920q/`: `nut-client` with `upsmon.conf.example`, the backup script and timer, and the `/root/.ssh/id_ed25519_nas` key (add its public key to the NAS user's `authorized_keys`).
+7. If the M920q's tailnet IP changed, update the `*.lab.lan` / `lab.lan` DNS rewrites in AdGuard (primary) and Tailscale's global nameserver entry; adguardhome-sync pushes the rewrite to the NAS.

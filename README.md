@@ -121,7 +121,7 @@ flowchart LR
 
 | Group | Services | Purpose |
 |---|---|---|
-| Edge | nginx, AdGuard Home (primary + NAS replica, adguardhome-sync), Tailscale, fail2ban | Reverse proxy by hostname; tailnet-wide DNS filtering and `*.lab.lan` rewrites with failover; mesh VPN; intrusion banning |
+| Edge | nginx, AdGuard Home (primary + NAS replica, adguardhome-sync), Tailscale, fail2ban | Reverse proxy by hostname; tailnet-wide DNS filtering and `*.lab.lan` rewrites with failover; mesh VPN (the M920q is also a Tailscale exit node); intrusion banning |
 | Monitoring | Prometheus (90 d retention), Grafana, Uptime Kuma, Netdata, cAdvisor, node-exporter, smartctl-exporter, Scrutiny, unpoller | Metrics, dashboards, uptime checks, drive health, UniFi stats |
 | Power | NUT server (pinned image), nut-exporter, host-side watcher | UPS telemetry and graceful shutdown |
 | Dashboard | Homepage | One front page with live widgets (Prometheus-backed, so tiles keep working when a host is off) |
@@ -135,6 +135,7 @@ flowchart LR
 - Kuma, Prometheus and Grafana publish on `127.0.0.1` only and are reached through nginx.
 - DNS is two AdGuard Home instances set as Tailscale global nameservers ("Override DNS servers" on): the primary on the M920q and a replica on the NAS kept identical by adguardhome-sync, so DNS and filtering survive either host going down. The NAS instance binds only its tailnet address (UGOS keeps `127.0.0.1:53`); if it starts before `tailscale0` exists the bind fails and Docker's restart policy retries, which replaced the old dnsmasq boot-race guard.
 - Internal services on the M920q (Dozzle, Homepage, control-api and others) publish no host ports at all.
+- The M920q is a Tailscale exit node (forwarding sysctls and UDP GRO tuning in `host/m920q/`), so any tailnet device can send all its traffic home over WireGuard on untrusted networks; the phone normally uses a Mullvad exit node through Tailscale's add-on instead. Either way DNS still goes to the tailnet AdGuard servers.
 - The NAS-side exporters, Netdata, Scrutiny, the Dozzle agent and a read-only Docker socket proxy publish on the NAS's LAN address only, so the M920q can reach them across hosts.
 
 **Credentials are never in config files.** Compose reads `.env`; Homepage receives them as `HOMEPAGE_VAR_*` variables. The iDRAC account used for read-only monitoring is a dedicated Operator-role account, separate from the admin account used by the control API.
