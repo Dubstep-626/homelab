@@ -350,6 +350,26 @@
         ping: scrypted
 
 - Network:
+    - AdGuard Home (M920q):
+        href: http://adguard.lab.lan:8080
+        description: Primary tailnet DNS - filtering, *.lab.lan rewrites
+        icon: adguard-home.png
+        widget:
+          type: adguard
+          url: http://adguard:80
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+
+    - AdGuard Home (NAS):
+        href: http://192.168.0.172:8086
+        description: Secondary tailnet DNS (synced replica)
+        icon: adguard-home.png
+        widget:
+          type: adguard
+          url: http://192.168.0.172:8086
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+
     - UniFi Network (UDR7):
         href: https://192.168.0.1
         description: Router/firewall/switch admin console

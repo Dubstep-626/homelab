@@ -40,18 +40,20 @@ services:
       - NET_RAW
     network_mode: host
 
-  # Split-DNS for *.lab.lan over Tailscale (bound to the NAS tailscale IP)
-  dnsmasq:
-    build: ./dnsmasq
-    container_name: dnsmasq
+  # AdGuard Home - SECONDARY tailnet DNS (replica of the M920q primary, kept in
+  # sync by adguardhome-sync). Host networking; DNS bound to the NAS tailnet IP
+  # only (set in the first-run wizard) because UGOS's own dnsmasq holds
+  # 127.0.0.1:53. If it starts before tailscale0 exists, the bind fails, it exits,
+  # and the restart policy retries until the address is up - no guard needed.
+  # Admin UI on :8086 (LAN), used by adguardhome-sync.
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: adguard
     restart: unless-stopped
-    networks:
-      - homelab
-    ports:
-      - "<NAS_TAILSCALE_IP>:53:53/udp"
-      - "<NAS_TAILSCALE_IP>:53:53/tcp"
+    network_mode: host
     volumes:
-      - ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+      - ./adguard/work:/opt/adguardhome/work
+      - ./adguard/conf:/opt/adguardhome/conf
 
   # --- Security --------------------------------------------------------
   fail2ban:

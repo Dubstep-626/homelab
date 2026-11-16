@@ -13,3 +13,4 @@ nginx/logs/
 tailscale/state/
 nut-server/flag/
 control-api/ssh/
+adguard/

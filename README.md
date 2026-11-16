@@ -11,7 +11,7 @@ I built this to practice the unglamorous parts of running infrastructure: monito
 | Role | Hardware | Notes |
 |---|---|---|
 | Services host | Lenovo ThinkCentre M920q Tiny (i5-8600T, 32 GB, 1 TB NVMe), Debian 13 | Always on. Runs the user-facing stack: nginx, Homepage, Grafana, Prometheus, Uptime Kuma, Dozzle, Scrypted, control-api |
-| NAS | UGREEN DXP2800 (Intel N100), UGOS (Debian 12 base) | Always on. One 4 TB WD Red Plus (`/volume1`); keeps NUT, split DNS, drive health and the exporters that report on its own hardware |
+| NAS | UGREEN DXP2800 (Intel N100), UGOS (Debian 12 base) | Always on. One 4 TB WD Red Plus (`/volume1`); keeps NUT, secondary DNS (AdGuard replica), drive health and the exporters that report on its own hardware |
 | Hypervisor | Dell PowerEdge T430 (2x Xeon E5-2630 v3), Proxmox VE | On demand. iDRAC8 (shared LOM) for out-of-band control; PERC H730 with SSD RAID 6 volumes and a separate HDD volume; 96 GB RAM |
 | Workstation | X570 (Crosshair VIII Hero, Ryzen 9 3900X, RTX 4070 SUPER), Fedora/Windows dual boot | On demand: Wake-on-LAN from the M920q, poweroff over Tailscale SSH; metrics via node-exporter; future local LLM host |
 | OT lab (planned) | Donated laptops | Physical OpenPLC / HMI / attacker segment for the security VMs to watch |
@@ -24,7 +24,7 @@ I built this to practice the unglamorous parts of running infrastructure: monito
 ```mermaid
 flowchart LR
   D[Desktop / laptop / phone] -- Tailscale --> TS[Tailnet]
-  TS --> DNS[dnsmasq on the NAS<br/>split DNS: *.lab.lan to the M920q<br/>bound to the NAS tailnet IP only]
+  TS --> DNS[AdGuard Home x2<br/>primary on the M920q, synced replica on the NAS<br/>filtering + *.lab.lan rewrites]
   TS --> NGX
 
   subgraph M920[M920q - Debian 13 + Docker, always on]
@@ -84,7 +84,7 @@ flowchart LR
   C[Desktop / laptop / phone] -- Tailscale --> M920
 
   subgraph AO[Always on, roughly 20-35 W]
-    M920[M920q - Docker services host<br/>nginx, dnsmasq, Homepage, Grafana,<br/>Prometheus, Uptime Kuma, NetBox, control-api]
+    M920[M920q - Docker services host<br/>nginx, AdGuard, Homepage, Grafana,<br/>Prometheus, Uptime Kuma, NetBox, control-api]
     NAS[DXP2800 NAS<br/>storage, backups, NUT primary]
   end
 
@@ -121,7 +121,7 @@ flowchart LR
 
 | Group | Services | Purpose |
 |---|---|---|
-| Edge | nginx, dnsmasq, Tailscale, fail2ban | Reverse proxy by hostname; split DNS for `*.lab.lan`; mesh VPN; intrusion banning |
+| Edge | nginx, AdGuard Home (primary + NAS replica, adguardhome-sync), Tailscale, fail2ban | Reverse proxy by hostname; tailnet-wide DNS filtering and `*.lab.lan` rewrites with failover; mesh VPN; intrusion banning |
 | Monitoring | Prometheus (90 d retention), Grafana, Uptime Kuma, Netdata, cAdvisor, node-exporter, smartctl-exporter, Scrutiny, unpoller | Metrics, dashboards, uptime checks, drive health, UniFi stats |
 | Power | NUT server (pinned image), nut-exporter, host-side watcher | UPS telemetry and graceful shutdown |
 | Dashboard | Homepage | One front page with live widgets (Prometheus-backed, so tiles keep working when a host is off) |
@@ -133,7 +133,7 @@ flowchart LR
 
 **Exposure is minimal by default.**
 - Kuma, Prometheus and Grafana publish on `127.0.0.1` only and are reached through nginx.
-- dnsmasq is bound to the tailnet address only, so `*.lab.lan` resolves for tailnet clients and nobody else. `homelab-dns-guard` recreates it if it starts before `tailscale0` exists at boot.
+- DNS is two AdGuard Home instances set as Tailscale global nameservers ("Override DNS servers" on): the primary on the M920q and a replica on the NAS kept identical by adguardhome-sync, so DNS and filtering survive either host going down. The NAS instance binds only its tailnet address (UGOS keeps `127.0.0.1:53`); if it starts before `tailscale0` exists the bind fails and Docker's restart policy retries, which replaced the old dnsmasq boot-race guard.
 - Internal services on the M920q (Dozzle, Homepage, control-api and others) publish no host ports at all.
 - The NAS-side exporters, Netdata, Scrutiny, the Dozzle agent and a read-only Docker socket proxy publish on the NAS's LAN address only, so the M920q can reach them across hosts.
 
@@ -173,7 +173,7 @@ docker-compose.nas.yml    # NAS stack (UPS, DNS, drive health, exporters)
 nginx/conf.d/             # one vhost per service          (M920q)
 prometheus/ grafana/      # scrape config, datasource      (M920q)
 homepage-config/          # dashboard tiles and widgets    (M920q)
-dnsmasq/ netdata/ nut-server/                            # (NAS)
+netdata/ nut-server/ adguard/                            # (NAS; adguard/ also on the M920q, runtime data, not committed)
 host/                     # systemd units + scripts on the NAS
 host/m920q/               # backup timer + NUT client config for the M920q
 docs/RESTORE.md           # rebuild runbook
@@ -189,7 +189,7 @@ cp .env.example .env && chmod 600 .env                   # fill in real values
 docker compose config -q && docker compose up -d
 ```
 
-Replace `<NAS_TAILSCALE_IP>` in `docker-compose.nas.yml` and `host/homelab-dns-guard.sh`, and `<M920Q_TAILSCALE_IP>` in `dnsmasq/dnsmasq.conf`. On a fresh Debian host, `mkdir -p /var/log/nginx` first: fail2ban mounts nginx logs inside a read-only `/var/log` and the mount point has to exist. Set a Netdata stream API key (`uuidgen`) in `netdata/stream.conf`.
+Run AdGuard's first-run wizard on each host (M920q: temporarily map `3010:3000`; NAS: `:3000`, DNS bound to the NAS tailnet IP, admin on `:8086`), use the same admin login on both, then add the `*.lab.lan` rewrite on the primary only - adguardhome-sync copies it. On a fresh Debian host, `mkdir -p /var/log/nginx` first: fail2ban mounts nginx logs inside a read-only `/var/log` and the mount point has to exist. Set a Netdata stream API key (`uuidgen`) in `netdata/stream.conf`.
 
 ## What I learned
 

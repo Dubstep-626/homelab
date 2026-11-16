@@ -47,7 +47,7 @@ Archive layout: `stack.tar.gz` (the stack directory without `rclone/`), `volumes
 sudo cp host/homelab-*.sh /usr/local/sbin/ && sudo chmod +x /usr/local/sbin/homelab-*.sh
 sudo cp host/homelab-*.service host/homelab-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now homelab-backup.timer homelab-ups-watch.service homelab-dns-guard.service
+sudo systemctl enable --now homelab-backup.timer homelab-ups-watch.service
 ```
 
 Recreate `/etc/homelab-backup.env` (chmod 600) with `KUMA_PUSH_URL` from Uptime Kuma's push monitor. Rejoin Tailscale and disable key expiry for the node.
@@ -67,4 +67,4 @@ The NAS archive's `stack.tar.gz` contains `m920q-backup/`, which holds the M920q
 3. Restore each volume the same way as step 3 above, using `homelab-bundle_<name>` as the volume name.
 4. `cd /opt/homelab/homelab-bundle && docker compose up -d`
 5. Re-create `host/m920q/`: `nut-client` with `upsmon.conf.example`, the backup script and timer, and the `/root/.ssh/id_ed25519_nas` key (add its public key to the NAS user's `authorized_keys`).
-6. If the M920q's tailnet IP changed, update `address=/lab.lan/...` in the NAS's `dnsmasq/dnsmasq.conf` and recreate dnsmasq.
+6. If the M920q's tailnet IP changed, update the `*.lab.lan` / `lab.lan` DNS rewrites in AdGuard (primary) and Tailscale's global nameserver entry; adguardhome-sync pushes the rewrite to the NAS.
