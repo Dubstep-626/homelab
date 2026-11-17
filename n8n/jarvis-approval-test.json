@@ -1,0 +1,207 @@
+{
+  "name": "Jarvis - Approval Test (T430)",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Test: ask to wake T430",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendAndWait",
+        "guildId": {
+          "__rl": true,
+          "value": "1556147688309788692",
+          "mode": "id"
+        },
+        "channelId": {
+          "__rl": true,
+          "value": "1572176540962259035",
+          "mode": "id"
+        },
+        "message": "**Jarvis requests approval:** power on the T430 (pve) via iDRAC?",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve",
+            "disapproveLabel": "Deny"
+          }
+        },
+        "options": {}
+      },
+      "name": "Discord: ask approval",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a1",
+              "leftValue": "={{ $json.data && $json.data.approved === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://control-api:5000/api/idrac/power",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"action\": \"On\"}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "iDRAC: power on",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "guildId": {
+          "__rl": true,
+          "value": "1556147688309788692",
+          "mode": "id"
+        },
+        "channelId": {
+          "__rl": true,
+          "value": "1572176540962259035",
+          "mode": "id"
+        },
+        "content": "={{ $json.error ? '\u26a0\ufe0f iDRAC power-on failed: ' + $json.error : '\u2705 Approved. T430 is powering on; Proxmox should be reachable in a few minutes.' }}",
+        "options": {}
+      },
+      "name": "Discord: result",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "guildId": {
+          "__rl": true,
+          "value": "1556147688309788692",
+          "mode": "id"
+        },
+        "channelId": {
+          "__rl": true,
+          "value": "1572176540962259035",
+          "mode": "id"
+        },
+        "content": "\u274c Denied. Leaving the T430 off.",
+        "options": {}
+      },
+      "name": "Discord: denied",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        660,
+        120
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Test: ask to wake T430": {
+      "main": [
+        [
+          {
+            "node": "Discord: ask approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord: ask approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "iDRAC: power on",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord: denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "iDRAC: power on": {
+      "main": [
+        [
+          {
+            "node": "Discord: result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

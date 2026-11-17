@@ -1,0 +1,9 @@
+services:
+  netbox:
+    networks:
+      - default
+      - homelab
+networks:
+  homelab:
+    external: true
+    name: homelab-bundle_homelab

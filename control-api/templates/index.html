@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Homelab Control</title>
+<!-- Lets iOS/Android "Add to Home Screen" treat this as a standalone app -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px;
+    background: #0f172a; color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .sub { color: #94a3b8; font-size: 0.85rem; margin-bottom: 20px; }
+  .card {
+    background: #1e293b; border-radius: 12px; padding: 16px;
+    margin-bottom: 16px; border: 1px solid #334155;
+  }
+  .card h2 { font-size: 1rem; margin: 0 0 10px; color: #f1f5f9; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .badge {
+    padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+  }
+  .badge.on { background: #14532d; color: #86efac; }
+  .badge.off { background: #450a0a; color: #fca5a5; }
+  .badge.unknown { background: #422006; color: #fdba74; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    flex: 1; min-width: 90px; padding: 12px 10px; border-radius: 8px; border: none;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  button.primary { background: #2563eb; color: white; }
+  button.danger { background: #b91c1c; color: white; }
+  button.neutral { background: #334155; color: #e2e8f0; }
+  button:active { opacity: 0.7; }
+  .vm-list { display: flex; flex-direction: column; gap: 10px; }
+  .vm-row { background: #0f172a; border-radius: 8px; padding: 10px; }
+  .vm-name { font-size: 0.9rem; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .toast {
+    position: fixed; bottom: 20px; left: 20px; right: 20px;
+    background: #334155; color: white; padding: 12px 16px; border-radius: 10px;
+    font-size: 0.85rem; display: none; text-align: center;
+  }
+</style>
+</head>
+<body>
+  <h1>Homelab Control</h1>
+  <div class="sub" id="lastUpdated">Loading status…</div>
+
+  <div class="card">
+    <h2>PowerEdge T430 (iDRAC)</h2>
+    <div class="row">
+      <span>Power state</span>
+      <span class="badge unknown" id="idracBadge">unknown</span>
+    </div>
+    <div class="btns">
+      <button class="primary" onclick="idracAction('On')">Power On</button>
+      <button class="neutral" onclick="idracAction('GracefulShutdown')">Shutdown</button>
+      <button class="neutral" onclick="idracAction('ForceRestart')">Force Restart</button>
+      <button class="danger" onclick="confirmForceOff()">Force Off</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Proxmox VMs / LXCs</h2>
+    <div class="vm-list" id="vmList">
+      <span class="sub">Loading…</span>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const TOKEN_KEY = "controlApiToken";
+
+function getToken() {
+  let t = localStorage_shim_get();
+  return t;
+}
+
+// Token is kept in memory only (not localStorage) since this page can
+// power-cycle a physical server — re-prompting each page load is a deliberate
+// tradeoff favoring safety over convenience. Add localStorage yourself if
+// you'd rather it persist across reloads on a trusted device.
+let cachedToken = null;
+function localStorage_shim_get() {
+  if (cachedToken) return cachedToken;
+  const entered = prompt("Enter control token (stored only for this session):");
+  cachedToken = entered || "";
+  return cachedToken;
+}
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => { el.style.display = "none"; }, 3000);
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch("/api/status");
+    const data = await res.json();
+
+    const badge = document.getElementById("idracBadge");
+    if (data.idrac && data.idrac.power_state) {
+      const on = data.idrac.power_state === "On";
+      badge.textContent = data.idrac.power_state;
+      badge.className = "badge " + (on ? "on" : "off");
+    } else {
+      badge.textContent = "unavailable";
+      badge.className = "badge unknown";
+    }
+
+    const vmList = document.getElementById("vmList");
+    vmList.innerHTML = "";
+    const vms = (data.proxmox && data.proxmox.vms) || [];
+    const lxcs = (data.proxmox && data.proxmox.lxcs) || [];
+    const all = [...vms.map(v => ({...v, kind: "qemu"})), ...lxcs.map(v => ({...v, kind: "lxc"}))];
+
+    if (all.length === 0) {
+      vmList.innerHTML = '<span class="sub">No VMs found (check .env config)</span>';
+    }
+
+    all.forEach(vm => {
+      const row = document.createElement("div");
+      row.className = "vm-row";
+      const running = vm.status === "running";
+      row.innerHTML = `
+        <div class="vm-name">
+          <span>${vm.name || vm.vmid} (${vm.kind})</span>
+          <span class="badge ${running ? 'on' : 'off'}">${vm.status}</span>
+        </div>
+        <div class="btns">
+          <button class="primary" onclick="vmAction(${vm.vmid}, 'start')">Start</button>
+          <button class="neutral" onclick="vmAction(${vm.vmid}, 'shutdown')">Shutdown</button>
+          <button class="danger" onclick="vmAction(${vm.vmid}, 'stop')">Force Stop</button>
+        </div>
+      `;
+      vmList.appendChild(row);
+    });
+
+    document.getElementById("lastUpdated").textContent =
+      "Updated " + new Date().toLocaleTimeString();
+
+    if (data.errors && data.errors.length) {
+      console.warn("Status errors:", data.errors);
+    }
+  } catch (e) {
+    document.getElementById("lastUpdated").textContent = "Status fetch failed";
+  }
+}
+
+async function idracAction(action) {
+  const token = getToken();
+  try {
+    const res = await fetch("/api/idrac/power", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+      body: JSON.stringify({ action })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "failed");
+    toast("iDRAC: " + action + " sent");
+  } catch (e) {
+    toast("Error: " + e.message);
+  }
+  setTimeout(refreshStatus, 2000);
+}
+
+function confirmForceOff() {
+  if (confirm("Force off the T430? This is a hard power cut, not a clean shutdown.")) {
+    idracAction("ForceOff");
+  }
+}
+
+async function vmAction(vmid, action) {
+  const token = getToken();
+  try {
+    const res = await fetch(`/api/proxmox/vm/${vmid}/${action}`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "failed");
+    toast(`VM ${vmid}: ${action} sent`);
+  } catch (e) {
+    toast("Error: " + e.message);
+  }
+  setTimeout(refreshStatus, 2000);
+}
+
+refreshStatus();
+setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

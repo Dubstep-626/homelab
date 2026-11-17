@@ -8,6 +8,7 @@ networks:
     driver: bridge
 
 volumes:
+  open-webui-data:
   uptime-kuma-data:
   prometheus-data:
   grafana-data:
@@ -17,6 +18,19 @@ volumes:
   fail2ban-config:
 
 services:
+# Jarvis set-up
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - homelab
+    environment:
+      - OLLAMA_BASE_URL=http://192.168.0.24:11434
+      - WEBUI_AUTH=true
+    volumes:
+      - open-webui-data:/app/backend/data
+
 
   # --- Reverse proxy ---------------------------------------------------
   nginx:
@@ -59,9 +73,8 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_MONITOR_ONLY=true
-      - WATCHTOWER_HTTP_API_METRICS=true          # Homepage update counter (internal only, no port)
+      - WATCHTOWER_HTTP_API_METRICS=true
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN}
-
   diun:
     image: crazymax/diun:latest
     container_name: diun
@@ -87,6 +100,7 @@ services:
       - homelab
     ports:
       - "127.0.0.1:3001:3001"
+      - "192.168.0.91:3001:3001"
     volumes:
       - uptime-kuma-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -201,7 +215,6 @@ services:
       - HOMEPAGE_VAR_WATCHTOWER_TOKEN=${WATCHTOWER_API_TOKEN}
       - HOMEPAGE_VAR_ADGUARD_USER=${ADGUARD_USER}
       - HOMEPAGE_VAR_ADGUARD_PASS=${ADGUARD_PASS}
-
   control-api:
     build: ./control-api
     container_name: control-api
@@ -218,50 +231,12 @@ services:
       - IDRAC_USER=${IDRAC_USER}
       - IDRAC_PASS=${IDRAC_PASS}
       - IDRAC_SYSTEM_ID=${IDRAC_SYSTEM_ID:-System.Embedded.1}
-      # X570: WoL (unicast via permanent ARP on the host) + Tailscale-SSH poweroff
-      - X570_MAC=${X570_MAC}
-      - X570_LAN_IP=${X570_LAN_IP}
-      - X570_TS_IP=${X570_TS_IP}
-      - X570_USER=${X570_USER}
-    volumes:
-      - ./control-api/ssh:/root/.ssh   # known_hosts only - Tailscale SSH, no keys
-
-  # --- DNS -------------------------------------------------------------
-  # AdGuard Home - PRIMARY tailnet DNS (Tailscale global nameserver #1, with the
-  # NAS replica as #2). Answers *.lab.lan via a DNS rewrite to the M920q tailnet
-  # IP; upstreams Quad9 + Cloudflare over DoH, DNSSEC on. Admin UI via nginx
-  # (adguard.lab.lan). First-run wizard needed a temporary "3010:3000" mapping.
-  adguard:
-    image: adguard/adguardhome:latest
-    container_name: adguard
-    restart: unless-stopped
-    networks:
-      - homelab
-    ports:
-      - "53:53/udp"
-      - "53:53/tcp"
-    volumes:
-      - ./adguard/work:/opt/adguardhome/work
-      - ./adguard/conf:/opt/adguardhome/conf
-
-  # Copies settings, filters and rewrites from the primary to the NAS replica.
-  adguardhome-sync:
-    image: ghcr.io/bakito/adguardhome-sync:latest
-    container_name: adguardhome-sync
-    restart: unless-stopped
-    networks:
-      - homelab
-    command: run
-    environment:
-      - ORIGIN_URL=http://adguard:80
-      - ORIGIN_USERNAME=${ADGUARD_USER}
-      - ORIGIN_PASSWORD=${ADGUARD_PASS}
-      - REPLICA1_URL=http://192.168.0.172:8086
-      - REPLICA1_USERNAME=${ADGUARD_USER}
-      - REPLICA1_PASSWORD=${ADGUARD_PASS}
-      - CRON=*/10 * * * *
-      - RUN_ON_START=true
-
+      - X570_MAC=${X570_MAC}            # new
+      - X570_LAN_IP=${X570_LAN_IP}      # new
+      - X570_TS_IP=${X570_TS_IP}        # new
+      - X570_USER=${X570_USER}          # new
+    volumes:                            # new
+      - ./control-api/ssh:/root/.ssh    # new
   # --- Cameras ---------------------------------------------------------
   scrypted:
     image: ghcr.io/koush/scrypted:latest
@@ -285,3 +260,34 @@ services:
       - KUMA_URL=http://uptime-kuma:3001
       - KUMA_USERNAME=${KUMA_USERNAME}
       - KUMA_PASSWORD=${KUMA_PASSWORD}
+
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: adguard
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+    volumes:
+      - ./adguard/work:/opt/adguardhome/work
+      - ./adguard/conf:/opt/adguardhome/conf
+
+  adguardhome-sync:
+    image: ghcr.io/bakito/adguardhome-sync:latest
+    container_name: adguardhome-sync
+    restart: unless-stopped
+    networks:
+      - homelab
+    command: run
+    environment:
+      - ORIGIN_URL=http://adguard:80
+      - ORIGIN_USERNAME=${ADGUARD_USER}
+      - ORIGIN_PASSWORD=${ADGUARD_PASS}
+      - REPLICA1_URL=http://192.168.0.172:8086
+      - REPLICA1_USERNAME=${ADGUARD_USER}
+      - REPLICA1_PASSWORD=${ADGUARD_PASS}
+      - CRON=*/10 * * * *
+      - RUN_ON_START=true
+

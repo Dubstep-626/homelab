@@ -228,7 +228,7 @@
         icon: mdi-server
 
     - Proxmox VE:
-        href: https://<TAILSCALE_IP>:8006
+        href: https://100.109.177.27:8006
         description: Hypervisor - T430
         icon: proxmox.png
         ping: 192.168.0.10
@@ -369,7 +369,6 @@
           url: http://192.168.0.172:8086
           username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
-
     - UniFi Network (UDR7):
         href: https://192.168.0.1
         description: Router/firewall/switch admin console

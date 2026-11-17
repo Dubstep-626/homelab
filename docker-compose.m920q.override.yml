@@ -1,0 +1,81 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    environment:
+      - N8N_HOST=n8n.lab.lan
+      - N8N_PROTOCOL=http
+      - N8N_PORT=5678
+      - WEBHOOK_URL=http://n8n.lab.lan:8080/
+      - N8N_SECURE_COOKIE=false
+      - N8N_PROXY_HOPS=1
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - GENERIC_TIMEZONE=America/Chicago
+      - TZ=America/Chicago
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - homelab
+
+  jarvis-bot:
+    build: ./jarvis-bot
+    container_name: jarvis-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - NETBOX_TOKEN=${NETBOX_TOKEN}
+      - JARVIS_CHANNEL_ID=1572176540962259035
+      - JARVIS_OWNER_ID=${JARVIS_OWNER_ID}
+      - TZ=America/Chicago
+    networks:
+      - homelab
+
+  jarvis-speech:
+    build: ./jarvis-speech
+    container_name: jarvis-speech
+    restart: unless-stopped
+    environment:
+      - WHISPER_MODEL=small.en
+      - PIPER_VOICE=en_GB-alan-medium
+      - TZ=America/Chicago
+    volumes:
+      - jarvis-models:/models
+    networks:
+      - homelab
+
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: kokoro
+    restart: unless-stopped
+    networks:
+      - homelab
+
+  jarvis-voice:
+    build: ./jarvis-voice
+    container_name: jarvis-voice
+    restart: unless-stopped
+    depends_on:
+      - jarvis-bot
+      - jarvis-speech
+      - kokoro
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - JARVIS_OWNER_ID=${JARVIS_OWNER_ID}
+      - JARVIS_GUILD_ID=1556147688309788692
+      - WAKE_WORD=jarvis
+      - REQUIRE_WAKE_WORD=true
+      - TTS_ENGINE=kokoro
+      - KOKORO_URLS=http://192.168.0.24:8880,http://kokoro:8880
+      - KOKORO_VOICE=bm_george
+      - KOKORO_SPEED=1.0
+      - SILENCE_MS=300
+      - MIN_RMS=350
+      - TZ=America/Chicago
+    networks:
+      - homelab
+
+volumes:
+  n8n-data:
+  jarvis-models:

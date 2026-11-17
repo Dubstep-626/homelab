@@ -1,0 +1,390 @@
+{
+  "name": "Jarvis - Daily Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "56 6 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Every day 6:56AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "up"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "Prometheus: up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|vfat|ramfs\",mountpoint!~\"/ugreen.*|/boot.*\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs|vfat|ramfs\",mountpoint!~\"/ugreen.*|/boot.*\"})"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "Prometheus: disk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://netbox:8080/api/dcim/devices/?limit=200",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "NetBox: devices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const up = $('Prometheus: up').first().json.data.result;\nconst disk = $('Prometheus: disk').first().json.data.result;\nconst devs = $('NetBox: devices').first().json.results;\n\nconst ipName = {};\nfor (const d of devs) {\n  const a = (d.primary_ip4 && d.primary_ip4.address) || (d.primary_ip && d.primary_ip.address);\n  if (a) ipName[a.split('/')[0]] = d.name;\n}\nconst nameOf = inst => ipName[String(inst).split(':')[0]] || inst;\nconst onDemand = new Set(devs.filter(d => (d.tags || []).some(t => t.slug === 'on-demand')).map(d => d.name));\n\nconst targets = up.map(r => ({ name: nameOf(r.metric.instance), job: r.metric.job, up: r.value[1] === '1' }));\nconst down = targets.filter(t => !t.up);\nconst off = down.filter(t => onDemand.has(t.name));\nconst realDown = down.filter(t => !onDemand.has(t.name));\n\nconst seen = new Set();\nconst diskRows = disk\n  .map(r => ({ host: nameOf(r.metric.instance), mount: r.metric.mountpoint, used: Math.round(parseFloat(r.value[1])) }))\n  .filter(d => { const k = d.host + d.mount; if (seen.has(k)) return false; seen.add(k); return true; })\n  .sort((a, b) => b.used - a.used);\nconst hot = diskRows.filter(d => d.used >= 80);\nconst notActive = devs.filter(d => d.status && d.status.value !== 'active').map(d => `${d.name} (${d.status.label})`);\n\nconst lines = [];\nlines.push(`Monitoring targets: ${targets.length - down.length}/${targets.length} up`);\nif (realDown.length) lines.push(`DOWN (needs attention): ${realDown.map(t => `${t.name} [${t.job}]`).join(', ')}`);\nif (off.length) lines.push(`Powered off (on-demand machines, this is normal): ${off.map(t => t.name).join(', ')}`);\nlines.push(hot.length\n  ? `Disks at or above 80%: ${hot.map(d => `${d.host} ${d.mount} ${d.used}%`).join(', ')}`\n  : `Disks: all under 80%` + (diskRows[0] ? ` (highest: ${diskRows[0].host} ${diskRows[0].mount} ${diskRows[0].used}%)` : ''));\nlines.push(`NetBox inventory: ${devs.length} devices` + (notActive.length ? `; not active: ${notActive.join(', ')}` : ''));\nif (!$('Was X570 on?').first().json.wasOn) lines.push('The X570 (deus-vult) was woken just for this briefing and will power off again afterward; do not mention this unless something failed.');\n\nreturn [{ json: { facts: lines.join('\\n') } }];"
+      },
+      "name": "Build facts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.0.24:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'qwen3:14b', stream: false, think: false, messages: [ { role: 'system', content: 'You are Jarvis, the assistant that runs the homelab. Write a short morning briefing for Discord (under 900 characters) from the facts given. Lead with anything that needs attention; if nothing does, say the lab is healthy. Be concise and direct, a touch of dry wit is fine. Use only the facts provided; never invent devices or numbers. Do not add a title or heading.' }, { role: 'user', content: $json.facts } ] }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "name": "Ollama: summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "PASTE_DISCORD_WEBHOOK_URL_HERE",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ username: 'Jarvis', content: ($json.message && $json.message.content) ? $json.message.content.replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim() : '(Ollama unreachable, X570 did not come up; raw facts)\\n' + $('Build facts').first().json.facts }) }}",
+        "options": {}
+      },
+      "name": "Discord: post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://control-api:5000/api/status",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "X570: status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json || {};\nreturn [{ json: { wasOn: !!(s.x570 && s.x570.fedora_up) } }];"
+      },
+      "name": "Was X570 on?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://control-api:5000/x570/wake",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "X570: wake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://192.168.0.24:11434/api/tags",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "name": "Wait for Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Was X570 on?').first().json.wasOn === false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Was it off before?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://control-api:5000/x570/shutdown",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "X570: shut down",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -100
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Every day 6:56AM": {
+      "main": [
+        [
+          {
+            "node": "X570: status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X570: status": {
+      "main": [
+        [
+          {
+            "node": "Was X570 on?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was X570 on?": {
+      "main": [
+        [
+          {
+            "node": "X570: wake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X570: wake": {
+      "main": [
+        [
+          {
+            "node": "Wait for Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Ollama": {
+      "main": [
+        [
+          {
+            "node": "Prometheus: up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prometheus: up": {
+      "main": [
+        [
+          {
+            "node": "Prometheus: disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prometheus: disk": {
+      "main": [
+        [
+          {
+            "node": "NetBox: devices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NetBox: devices": {
+      "main": [
+        [
+          {
+            "node": "Build facts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build facts": {
+      "main": [
+        [
+          {
+            "node": "Ollama: summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama: summarize": {
+      "main": [
+        [
+          {
+            "node": "Discord: post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord: post": {
+      "main": [
+        [
+          {
+            "node": "Was it off before?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was it off before?": {
+      "main": [
+        [
+          {
+            "node": "X570: shut down",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

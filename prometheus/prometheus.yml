@@ -48,14 +48,14 @@ scrape_configs:
       - targets: ["192.168.0.172:9199"]
 
   # --- On-demand boxes ---
-  - job_name: "node-exporter-t430"
-    static_configs:
-      - targets: ["192.168.0.10:9100"]   # T430 / Proxmox host; down whenever the T430 is powered off
-        labels:
-          host: "t430"
-
   - job_name: "node-exporter-x570"
     static_configs:
-      - targets: ["192.168.0.24:9100"]   # X570 / deus-vult (node-exporter container); down when off or in Windows
+      - targets: ["192.168.0.24:9100"]   # EDIT: X570 IP
         labels:
           host: "x570"
+
+  - job_name: "node-exporter-t430"
+    static_configs:
+      - targets: ["192.168.0.10:9100"]   # DOWN when the T430 is off
+        labels:
+          host: "t430"
