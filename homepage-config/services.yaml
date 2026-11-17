@@ -325,6 +325,17 @@
                 format: float
                 suffix: "%"
 
+    - Gaming mode:
+        icon: mdi-controller
+        href: http://control.lab.lan:8080/x570/gaming
+        description: Free the X570 GPU for games
+        widget:
+          type: customapi
+          url: http://control-api:5000/x570/gaming/status
+          mappings:
+            - field: mode
+              label: Gaming mode
+
     - iDRAC (T430):
         href: https://192.168.0.20
         description: Out-of-band management

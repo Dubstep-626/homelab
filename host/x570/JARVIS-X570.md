@@ -33,7 +33,7 @@ curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-contai
 sudo dnf install -y nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker && sudo systemctl enable docker
-docker run -d --name kokoro --restart unless-stopped --gpus all \
+docker run -d --name kokoro --restart always --gpus all \
   -p 192.168.0.24:8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest
 ```
 

@@ -206,6 +206,17 @@ async def run_tool(name, args):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+GAMING_MSG = "Gaming mode is on, so the X570 is off-limits and my brain is offline. Turn it off from the Gaming mode tile when you're done."
+
+
+async def gaming_mode() -> bool:
+    try:
+        d = await http_json("GET", f"{CONTROL}/x570/gaming/status", timeout=T(3))
+        return bool(d.get("gaming"))
+    except Exception:
+        return False
+
+
 async def ollama_up() -> bool:
     try:
         async with session.get(f"{OLLAMA}/api/tags", timeout=T(3)) as r:
@@ -288,6 +299,8 @@ async def api_ask(req):
     text = str(data.get("text", "")).strip()
     if not text:
         return web.json_response({"reply": ""})
+    if await gaming_mode():
+        return web.json_response({"reply": GAMING_MSG})
     async with voice_lock:
         if not await ollama_up() and not await wake_and_wait():
             return web.json_response({"reply": "The X570 did not come up, so I can't think right now."})
@@ -345,6 +358,9 @@ async def on_message(m: discord.Message):
     if text.lower() in {"reset", "forget", "new topic"}:
         history[m.channel.id].clear()
         await m.reply("Context cleared.")
+        return
+    if await gaming_mode():
+        await m.reply(GAMING_MSG)
         return
     if not await ensure_brain(m.channel):
         return

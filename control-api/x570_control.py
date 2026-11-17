@@ -94,6 +94,7 @@ def status():
 
 @bp.post("/wake")
 def wake():
+    set_gaming(False)
     send_wol()
     return render_template_string(PAGE, up=fedora_up(),
                                   msg="Magic packet sent - give it ~90 s, then refresh.")
@@ -101,6 +102,7 @@ def wake():
 
 @bp.post("/shutdown")
 def shutdown():
+    set_gaming(False)
     if not fedora_up():
         return render_template_string(PAGE, up=False,
                                       msg="Not reachable in Fedora - nothing to shut down.")
@@ -113,3 +115,95 @@ def shutdown():
     except subprocess.TimeoutExpired:
         msg = "Shutdown sent (connection timed out as it powered off)."
     return render_template_string(PAGE, up=False, msg=msg)
+
+
+# ---------------------------------------------------------------------------
+# Gaming mode: free the X570's GPU (stop Kokoro, unload Ollama models) and tell
+# Jarvis to stay off the X570. State is a flag file shared by all gunicorn
+# workers; it resets on wake/shutdown and whenever control-api restarts.
+# Kokoro runs with --restart always, so a reboot also brings it back.
+# ---------------------------------------------------------------------------
+GAMING_FLAG = "/tmp/x570_gaming"
+
+GAMING_ON_CMD = ("docker stop kokoro >/dev/null 2>&1; "
+                 "for m in $(ollama ps 2>/dev/null | awk 'NR>1{print $1}'); do ollama stop \"$m\"; done; echo ok")
+GAMING_OFF_CMD = "docker start kokoro >/dev/null 2>&1 && echo ok"
+
+
+def gaming_on_flag() -> bool:
+    return os.path.exists(GAMING_FLAG)
+
+
+def set_gaming(on: bool) -> None:
+    if on:
+        open(GAMING_FLAG, "w").close()
+    else:
+        try:
+            os.remove(GAMING_FLAG)
+        except FileNotFoundError:
+            pass
+
+
+def _x570_ssh(cmd: str):
+    try:
+        r = subprocess.run(["ssh", *SSH_OPTS, f"{USER}@{TS_IP}", cmd],
+                           capture_output=True, text=True, timeout=30)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()[:200]
+    except subprocess.TimeoutExpired:
+        return False, "timed out"
+
+
+GAMING_PAGE = """<!doctype html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Gaming mode</title>
+<style>
+ body{font-family:system-ui,sans-serif;background:#111827;color:#e5e7eb;display:flex;justify-content:center;padding:2rem}
+ .card{background:#1f2937;border-radius:12px;padding:1.5rem;max-width:360px;width:100%}
+ h1{font-size:1.2rem;margin:0 0 .5rem}.s{margin:.5rem 0 1.25rem;font-weight:600}
+ .on{color:#f472b6}.off{color:#34d399}.na{color:#9ca3af}form{display:inline}
+ button{font-size:1rem;padding:.7rem 1.2rem;border:0;border-radius:8px;margin:.25rem;cursor:pointer;color:#fff}
+ .go{background:#db2777}.back{background:#059669}.msg{margin-top:1rem;color:#fbbf24}.hint{color:#9ca3af;font-size:.9rem}
+ a{color:#93c5fd}
+</style></head><body><div class="card">
+<h1>&#127918; Gaming mode &middot; X570</h1>
+{% if not up %}<div class="s na">X570 is off</div>
+{% elif gaming %}<div class="s on">ON &mdash; GPU free, Jarvis is off the X570</div>
+<form method="post" action="{{ url_for('x570.gaming_off') }}"><button class="back">Turn off (bring Jarvis back)</button></form>
+{% else %}<div class="s off">OFF &mdash; Jarvis is using the X570</div>
+<form method="post" action="{{ url_for('x570.gaming_on') }}"><button class="go">Turn on gaming mode</button></form>
+{% endif %}
+<p class="hint">On: stops Kokoro and unloads Ollama models (about 11.5 GB VRAM freed). Jarvis falls back to the M920q voice and won't load models until you turn it off.</p>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<p><a href="{{ url_for('x570.gaming_page') }}">refresh</a> &middot; <a href="{{ url_for('x570.page') }}">X570 power</a></p>
+</div></body></html>"""
+
+
+@bp.get("/gaming")
+def gaming_page():
+    return render_template_string(GAMING_PAGE, up=fedora_up(), gaming=gaming_on_flag(), msg=None)
+
+
+@bp.get("/gaming/status")
+def gaming_status():
+    on = gaming_on_flag()
+    return jsonify(gaming=on, mode="ON" if on else "OFF")
+
+
+@bp.post("/gaming/on")
+def gaming_on():
+    if not fedora_up():
+        return render_template_string(GAMING_PAGE, up=False, gaming=False, msg="X570 is off.")
+    ok, out = _x570_ssh(GAMING_ON_CMD)
+    if ok:
+        set_gaming(True)
+    msg = "Gaming mode on. GPU is free." if ok else f"Failed: {out}"
+    return render_template_string(GAMING_PAGE, up=True, gaming=gaming_on_flag(), msg=msg)
+
+
+@bp.post("/gaming/off")
+def gaming_off():
+    set_gaming(False)
+    msg = "Gaming mode off."
+    if fedora_up():
+        ok, out = _x570_ssh(GAMING_OFF_CMD)
+        msg = "Gaming mode off. Kokoro is starting; Jarvis is back." if ok else f"Flag cleared, but Kokoro didn't start: {out}"
+    return render_template_string(GAMING_PAGE, up=fedora_up(), gaming=False, msg=msg)
