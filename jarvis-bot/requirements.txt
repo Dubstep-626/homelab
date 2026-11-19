@@ -1,2 +1,5 @@
 py-cord==2.6.1
 aiohttp
+caldav
+feedparser
+beautifulsoup4

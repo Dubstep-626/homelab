@@ -9,6 +9,7 @@ networks:
     driver: bridge
 
 volumes:
+  jarvis-files-index:
   netdata-config:
   netdata-lib:
   netdata-cache:
@@ -40,17 +41,24 @@ services:
       - NET_RAW
     network_mode: host
 
-  # AdGuard Home - SECONDARY tailnet DNS (replica of the M920q primary, kept in
-  # sync by adguardhome-sync). Host networking; DNS bound to the NAS tailnet IP
-  # only (set in the first-run wizard) because UGOS's own dnsmasq holds
-  # 127.0.0.1:53. If it starts before tailscale0 exists, the bind fails, it exits,
-  # and the restart policy retries until the address is up - no guard needed.
-  # Admin UI on :8086 (LAN), used by adguardhome-sync.
+  # Split-DNS for *.lab.lan over Tailscale (bound to the NAS tailscale IP)
+#  dnsmasq:
+ #   build: ./dnsmasq
+  #  container_name: dnsmasq
+   # restart: unless-stopped
+   # networks:
+    #  - homelab
+   # ports:
+    #  - "100.94.25.77:53:53/udp"
+    #  - "100.94.25.77:53:53/tcp"
+  #  volumes:
+   #   - ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+
   adguard:
     image: adguard/adguardhome:latest
     container_name: adguard
     restart: unless-stopped
-    network_mode: host
+    network_mode: host      # binds the Tailscale IP directly; UGOS keeps 127.0.0.1:53
     volumes:
       - ./adguard/work:/opt/adguardhome/work
       - ./adguard/conf:/opt/adguardhome/conf
@@ -86,7 +94,7 @@ services:
       - WATCHTOWER_HTTP_API_METRICS=true
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN}
     ports:
-      - "192.168.0.172:8085:8080"   # LAN IP only - scraped by Homepage on the M920q
+      - "192.168.0.172:8085:8080"      # LAN IP only, like your other NAS exporters
 
   diun:
     image: crazymax/diun:latest
@@ -259,3 +267,19 @@ services:
       - NUT_EXPORTER_SERVER=nut-server
       - NUT_EXPORTER_USERNAME=${NUT_MON_USER}
       - NUT_EXPORTER_PASSWORD=${NUT_MON_PASSWORD}
+
+  jarvis-files:
+    build: ./jarvis-files
+    container_name: jarvis-files
+    restart: unless-stopped
+    environment:
+      - FILES_TOKEN=${FILES_TOKEN}
+      - TZ=America/Chicago
+    volumes:
+      - /volume1:/data:ro
+      - jarvis-files-index:/index
+    ports:
+      - "192.168.0.172:8095:8095"
+    cpus: "1.0"
+    mem_limit: 768m
+

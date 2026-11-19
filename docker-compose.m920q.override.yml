@@ -28,9 +28,16 @@ services:
       - NETBOX_TOKEN=${NETBOX_TOKEN}
       - JARVIS_CHANNEL_ID=1572176540962259035
       - JARVIS_OWNER_ID=${JARVIS_OWNER_ID}
+      - ICLOUD_USER=${ICLOUD_USER}
+      - ICLOUD_APP_PASSWORD=${ICLOUD_APP_PASSWORD}
+      - ICLOUD_DEFAULT_CALENDAR=${ICLOUD_DEFAULT_CALENDAR:-}
+      - FILES_TOKEN=${FILES_TOKEN}
       - TZ=America/Chicago
+    volumes:
+      - jarvis-bot-data:/data
     networks:
       - homelab
+      - jarvis-logs
 
   jarvis-speech:
     build: ./jarvis-speech
@@ -95,7 +102,36 @@ services:
     networks:
       - homelab
 
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - jarvis-logs
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - homelab
+
 volumes:
+  jarvis-bot-data:
   sentinel-data:
   n8n-data:
   jarvis-models:
+
+networks:
+  jarvis-logs:
+    internal: true

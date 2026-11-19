@@ -29,6 +29,8 @@ Discord ──text──▶ jarvis-bot (Python, Pycord) ──tools──▶ Pro
 | control-api | M920q | Flask; X570 wake/shutdown, iDRAC power, Proxmox VMs, Gaming mode |
 | SearXNG | M920q | Private metasearch for Jarvis's `web_search` (Docker network only) |
 | jarvis-sentinel | M920q (`lockdown.lab.lan`) | Lockdown switch + lab scanner; nightly scan at 3:15 |
+| docker-proxy | M920q | Read-only Docker API (GET only) on an internal network shared only with jarvis-bot, for log access |
+| jarvis-files | NAS (`192.168.0.172:8095`, token) | Read-only search over Volume 1 (SQLite FTS5); nightly reindex at 2:00 |
 
 ## Phases
 
@@ -56,6 +58,14 @@ Safety:
 - Everything from the web is wrapped as untrusted. Jarvis is told never to follow instructions in it or request actions because of it.
 - `fetch_page` only reaches public IPs: no RFC1918, CGNAT/Tailscale, loopback, `.lan`/`.local`/`.ts.net`, or non-80/443 ports. Every redirect is re-checked. 2 MB cap, 5,000 characters returned.
 - Actions still require an Approve click, whatever any web page says.
+
+## Personal data access
+
+- **Reminders:** stored in the bot's volume (`/data/reminders.json`). At the time, Jarvis @mentions Mitch in `#jarvis`, which arrives as a push notification. Apple Reminders has no third-party API, so Discord is the delivery channel.
+- **iCloud Calendar:** read any calendar and add events over CalDAV, using an Apple app-specific password (`ICLOUD_USER`, `ICLOUD_APP_PASSWORD`, optional `ICLOUD_DEFAULT_CALENDAR`). No edit or delete tool exists.
+- **Lab logs:** `list_containers` and `get_container_logs` go through `tecnativa/docker-socket-proxy` (`CONTAINERS=1`, `POST=0`). It's on an `internal` network that only jarvis-bot shares. Log lines are scrubbed of tokens, webhooks, Discord tokens and `key=`/`password=` values before the model sees them.
+- **NAS files:** `search_files`, `find_files` and `read_file` call jarvis-files, which runs on the NAS. `/volume1` is mounted read-only. Excluded from indexing and reading: `docker/`, every `@` system folder, recycle bins, `.env*`, `.kdbx`, keys and certs, SSH folders, `*secrets*` and SQLite databases. Text is extracted from documents only (txt/md/pdf/docx/csv/…); media files are indexed by name. The service is capped at 1 CPU and 768 MB.
+- File contents and the answers built from them are posted in Discord, so they pass through Discord's servers.
 
 ## Lockdown and scanning (jarvis-sentinel)
 
