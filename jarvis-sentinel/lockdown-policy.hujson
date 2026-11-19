@@ -1,0 +1,43 @@
+{
+	// LOCKDOWN POLICY - applied by jarvis-sentinel. Your normal policy is saved
+	// and restored exactly when lockdown is turned off. Edit this file to change
+	// what lockdown allows; sentinel validates it with Tailscale before applying.
+	"tagOwners": {"tag:portable": ["autogroup:admin"]},
+
+	"hosts": {
+		"m920q":    "100.83.195.113",
+		"nas":      "100.94.25.77",
+		"pve":      "100.109.177.27",
+		"x570":     "100.76.76.0",
+		"iphone":   "100.97.241.66",
+		"thinkpad": "100.82.70.104",
+		"pos":      "100.107.30.11",
+	},
+
+	"grants": [
+		// Phone and ThinkPad keep full access (your admin devices)
+		{"src": ["iphone", "thinkpad"], "dst": ["*"], "ip": ["*"]},
+		// Lab servers keep talking to each other (control-api SSH to the X570, sync, monitoring)
+		{"src": ["m920q", "nas", "pve", "x570"], "dst": ["m920q", "nas", "pve", "x570"], "ip": ["*"]},
+		// Every device keeps DNS (AdGuard primary + secondary), so nothing breaks
+		{"src": ["autogroup:member"], "dst": ["m920q", "nas"], "ip": ["udp:53", "tcp:53"]},
+		// Work laptop (pos): SSH and the web dashboards on the M920q only
+		{"src": ["pos"], "dst": ["m920q"], "ip": ["tcp:22", "tcp:8080", "icmp:*"]},
+		// tag:portable (CardputerZero): no access while locked down
+	],
+
+	"ssh": [
+		{
+			"src":    ["autogroup:member"],
+			"dst":    ["autogroup:self"],
+			"users":  ["autogroup:nonroot", "root"],
+			"action": "accept",
+		},
+	],
+
+	"tests": [
+		{"src": "tag:portable", "deny": ["m920q:22", "nas:22", "pve:22"]},
+	],
+
+	"nodeAttrs": [{"target": ["100.97.241.66"], "attr": ["mullvad"]}],
+}

@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const b = $('Webhook').first().json.body || {};\nconst map = {\n  wake_x570:     { url: 'http://control-api:5000/x570/wake',       body: {},                           label: 'Wake the X570 (deus-vult)' },\n  shutdown_x570: { url: 'http://control-api:5000/x570/shutdown',   body: {},                           label: 'Shut down the X570 (deus-vult)' },\n  power_on_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'On' },              label: 'Power on the T430 (pve)' },\n  shutdown_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'GracefulShutdown' }, label: 'Gracefully shut down the T430 (pve)' },\n};\nconst m = map[b.action];\nif (!m) throw new Error('Unknown action: ' + b.action);\nreturn [{ json: { ...m, action: b.action, reason: b.reason || '' } }];"
+        "jsCode": "const b = $('Webhook').first().json.body || {};\nconst map = {\n  wake_x570:     { url: 'http://control-api:5000/x570/wake',       body: {},                           label: 'Wake the X570 (deus-vult)' },\n  shutdown_x570: { url: 'http://control-api:5000/x570/shutdown',   body: {},                           label: 'Shut down the X570 (deus-vult)' },\n  power_on_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'On' },              label: 'Power on the T430 (pve)' },\n  shutdown_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'GracefulShutdown' }, label: 'Gracefully shut down the T430 (pve)' },\n  lockdown_off:  { url: 'http://jarvis-sentinel:8000/lockdown/off', body: {},                    label: 'Turn OFF lab lockdown' },\n};\nconst m = map[b.action];\nif (!m) throw new Error('Unknown action: ' + b.action);\nreturn [{ json: { ...m, action: b.action, reason: b.reason || '' } }];"
       },
       "name": "Map action",
       "type": "n8n-nodes-base.code",
@@ -102,6 +102,15 @@
         "jsonBody": "={{ JSON.stringify($('Map action').first().json.body) }}",
         "options": {
           "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer PASTE_CONTROL_API_TOKEN_HERE"
+            }
+          ]
         }
       },
       "name": "Run action",

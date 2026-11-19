@@ -336,6 +336,17 @@
             - field: mode
               label: Gaming mode
 
+    - Lockdown:
+        icon: mdi-shield-lock
+        href: http://lockdown.lab.lan:8080
+        description: Lock down the lab + scan for anything out of place
+        widget:
+          type: customapi
+          url: http://jarvis-sentinel:8000/status
+          mappings:
+            - field: mode
+              label: Status
+
     - iDRAC (T430):
         href: https://192.168.0.20
         description: Out-of-band management

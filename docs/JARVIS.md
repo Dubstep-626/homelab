@@ -26,7 +26,9 @@ Discord ──text──▶ jarvis-bot (Python, Pycord) ──tools──▶ Pro
 | jarvis-voice | M920q | Voice channel client; health on `:8098` |
 | jarvis-speech | M920q | `/stt` (faster-whisper) and `/tts` (Piper) |
 | Kokoro | X570 (GPU) + M920q (CPU) | Natural TTS, voice `bm_george` |
-| control-api | M920q | Flask; X570 wake/shutdown, iDRAC power, Proxmox VMs |
+| control-api | M920q | Flask; X570 wake/shutdown, iDRAC power, Proxmox VMs, Gaming mode |
+| SearXNG | M920q | Private metasearch for Jarvis's `web_search` (Docker network only) |
+| jarvis-sentinel | M920q (`lockdown.lab.lan`) | Lockdown switch + lab scanner; nightly scan at 3:15 |
 
 ## Phases
 
@@ -40,12 +42,42 @@ Discord ──text──▶ jarvis-bot (Python, Pycord) ──tools──▶ Pro
 
 - Jarvis never acts directly. The LLM can only call `request_action`, which posts Approve/Deny buttons. Nothing runs until the owner clicks Approve.
 - Only the owner's Discord user ID is listened to (text and voice).
-- Tokens: NetBox token is read-only; the bot token, n8n encryption key and control-api token live in `.env` (never committed).
+- Tokens: NetBox token is read-only; the bot token, n8n encryption key, control-api token (random 32-byte hex), Tailscale OAuth client and webhook URL live in `.env` (never committed).
 - control-api: X570 wake/shutdown and T430 `On`/`GracefulShutdown` need no token (reachable only from the LAN/tailnet); `ForceOff`/restarts still require the bearer token.
 
 ## Why a Node container for voice
 
 Discord has required DAVE end-to-end encryption on all voice calls since March 2026. Released Pycord can *send* DAVE audio but cannot *receive* it, so speech recognition is impossible with Pycord. `@discordjs/voice` 0.19+ with `@snazzah/davey` can receive. The Node container handles only audio and forwards text to the Python bot's `/ask`, so the tools, history and approvals stay in one place.
+
+## Internet access (read-only)
+
+Tools: `get_weather` (Open-Meteo, no key; defaults to home), `get_headlines` (ProPublica + The Conversation RSS, set in `NEWS_FEEDS`), `web_search` (self-hosted SearXNG), `fetch_page`.
+Safety:
+- Everything from the web is wrapped as untrusted. Jarvis is told never to follow instructions in it or request actions because of it.
+- `fetch_page` only reaches public IPs: no RFC1918, CGNAT/Tailscale, loopback, `.lan`/`.local`/`.ts.net`, or non-80/443 ports. Every redirect is re-checked. 2 MB cap, 5,000 characters returned.
+- Actions still require an Approve click, whatever any web page says.
+
+## Lockdown and scanning (jarvis-sentinel)
+
+**Lockdown ON** (dashboard, Homepage tile, or "Jarvis, lock down"; no token, since it's protective):
+- Saves the current Tailscale policy and applies `jarvis-sentinel/lockdown-policy.hujson` through the API (OAuth client: Policy File write, Devices Core read). Tailscale validates the policy first.
+- Under lockdown: phone and ThinkPad keep full access, lab servers keep talking to each other, every device keeps DNS, the work laptop (`pos`) gets SSH and dashboards on the M920q only, and `tag:portable` is cut off.
+- AdGuard turns on the `[lockdown]` lists (HaGeZi TIF medium, phishing filter, Dandelion Sprout anti-malware) plus Safe Browsing. The NAS secondary follows via adguardhome-sync.
+- Runs a full scan and posts the report to Discord.
+
+**Lockdown OFF** needs the control-api token. That's the dashboard token box, or n8n after an Approve click (`lockdown_off` in *Jarvis - Actions*, which sends `Authorization: Bearer <token>`). It restores the saved policy exactly and returns AdGuard to its prior state.
+
+**Scan**, compared against a baseline recorded on the first run (reset it with "Accept current state as normal"):
+- new UniFi clients (unpoller metrics)
+- new Tailscale machines, or machines waiting for approval
+- new open ports on NetBox hosts (nmap connect scan)
+- new containers (cAdvisor)
+- down targets that aren't tagged `on-demand`
+- AdGuard Safe Browsing hits
+
+The nightly scan only posts if it finds something.
+
+Lessons: AdGuard's API rejects body-less POSTs, so send `{}`. Programs that send `Accept: */*` with `text/html` in it must still get JSON. Keep references to background asyncio tasks. Respect Discord 429 `retry_after`. In n8n 2.x, edits must be **saved** before **Publish**, which only promotes the last saved version.
 
 ## Latency (end of speech → start of reply)
 

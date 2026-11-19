@@ -29,12 +29,14 @@ PROM = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
 NETBOX = os.getenv("NETBOX_URL", "http://netbox:8080")
 CONTROL = os.getenv("CONTROL_API_URL", "http://control-api:5000")
 ACTION_HOOK = os.getenv("N8N_ACTION_WEBHOOK", "http://n8n:5678/webhook/jarvis-action")
+SENTINEL = os.getenv("SENTINEL_URL", "http://jarvis-sentinel:8000")
 
 ACTIONS = {
     "wake_x570": "Wake the X570 (deus-vult)",
     "shutdown_x570": "Shut down the X570 (deus-vult)",
     "power_on_t430": "Power on the T430 (pve) via iDRAC",
     "shutdown_t430": "Gracefully shut down the T430 (pve) via iDRAC",
+    "lockdown_off": "Turn OFF lab lockdown (restore the normal Tailscale policy and DNS filtering)",
 }
 
 SYSTEM = """You are Jarvis, the AI that helps Mitch run his homelab. You talk to him in Discord.
@@ -51,6 +53,8 @@ Rules:
 - NetBox is the source of truth for inventory and cabling.
 - You cannot change anything directly. To power a machine on or off, call request_action: it posts an Approve/Deny prompt in Discord. Then tell Mitch the request is waiting for his approval; never claim it is done.
 - Machines tagged on-demand being off is normal, not a problem.
+- Every time Mitch asks to lock down, unlock, scan, or power something on/off, you MUST call the tool again, even if you did the same thing earlier in this conversation. Earlier messages are history, not proof of the current state. Never say an action happened unless a tool result in THIS turn confirms it.
+- Security: lockdown_on locks the lab down immediately (strict Tailscale policy + threat DNS blocklists) and starts a scan; use it when Mitch asks to lock down. security_scan checks for anything out of place. You can NEVER unlock directly: to turn lockdown off, call request_action with lockdown_off so Mitch approves it.
 - If a tool returns an error, say so plainly."""
 
 TOOLS = [
@@ -70,6 +74,19 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string", "description": "PromQL expression"}},
             "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "lockdown_status",
+        "description": "Is the lab locked down right now, since when, and the latest security scan results.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "lockdown_on",
+        "description": "Lock the lab down NOW (no approval needed): strict Tailscale policy, threat DNS blocklists, then a full scan posted to Discord.",
+        "parameters": {"type": "object", "properties": {
+            "reason": {"type": "string", "description": "Short reason, e.g. 'Mitch asked' or what looked suspicious"}}}}},
+    {"type": "function", "function": {
+        "name": "security_scan",
+        "description": "Scan the lab for anything out of place: new network devices, new Tailscale machines, new open ports, new containers, unexpected outages, DNS threat blocks. Takes up to a couple of minutes.",
+        "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "request_action",
         "description": "Ask Mitch to approve a state-changing action. Posts Approve/Deny buttons in Discord; nothing happens unless he approves.",
@@ -187,10 +204,27 @@ async def tool_request_action(args):
     return {"status": f"Approval for '{ACTIONS[action]}' posted in Discord. Nothing happens until Mitch clicks Approve."}
 
 
+
+async def tool_lockdown_status(_args):
+    return await http_json("GET", f"{SENTINEL}/status")
+
+
+async def tool_lockdown_on(args):
+    return await http_json("POST", f"{SENTINEL}/lockdown/on", timeout=T(240),
+                           json={"by": "Jarvis", "reason": str(args.get("reason") or "Mitch asked")})
+
+
+async def tool_security_scan(_args):
+    return await http_json("POST", f"{SENTINEL}/scan", timeout=T(300))
+
+
 TOOL_FUNCS = {
     "get_lab_status": tool_lab_status,
     "get_device_info": tool_device_info,
     "query_prometheus": tool_promql,
+    "lockdown_status": tool_lockdown_status,
+    "lockdown_on": tool_lockdown_on,
+    "security_scan": tool_security_scan,
     "request_action": tool_request_action,
 }
 

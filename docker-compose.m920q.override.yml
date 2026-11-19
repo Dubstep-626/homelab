@@ -76,6 +76,26 @@ services:
     networks:
       - homelab
 
+  jarvis-sentinel:
+    build: ./jarvis-sentinel
+    container_name: jarvis-sentinel
+    restart: unless-stopped
+    environment:
+      - CONTROL_API_TOKEN=${CONTROL_API_TOKEN}
+      - TS_OAUTH_CLIENT_ID=${TS_OAUTH_CLIENT_ID}
+      - TS_OAUTH_CLIENT_SECRET=${TS_OAUTH_CLIENT_SECRET}
+      - ADGUARD_USERNAME=${SENTINEL_ADGUARD_USER}
+      - ADGUARD_PASSWORD=${SENTINEL_ADGUARD_PASS}
+      - NETBOX_TOKEN=${NETBOX_TOKEN}
+      - DISCORD_WEBHOOK_URL=${JARVIS_WEBHOOK_URL}
+      - TZ=America/Chicago
+    volumes:
+      - sentinel-data:/data
+      - ./jarvis-sentinel/lockdown-policy.hujson:/app/lockdown-policy.hujson:ro
+    networks:
+      - homelab
+
 volumes:
+  sentinel-data:
   n8n-data:
   jarvis-models:
