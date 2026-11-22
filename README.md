@@ -6,7 +6,7 @@ On top of that sits **Jarvis**, a local AI assistant that knows the lab's invent
 
 I built this to practice the unglamorous parts of running infrastructure: monitoring that actually alerts, backups that are encrypted *and* verified, least-privilege service accounts, sequenced power control, and a documented restore path. My background is industrial maintenance and controls, so the design leans on ideas from the plant floor: out-of-band management, a sensor-to-alarm-to-action loop for power loss, permissives before anything changes state, and minimal exposure by default.
 
-> This repo is a sanitized export. Secrets live in `.env` (see `.env.example`), IPs on the tailnet are replaced with placeholders, and two services (`control-api`, `kuma-seed`) have their source omitted.
+> This repo is a sanitized export. Secrets live in `.env` (see `.env.example`), IPs on the tailnet are replaced with placeholders, and `kuma-seed` has its source omitted.
 
 ## Hardware
 
@@ -25,60 +25,61 @@ I built this to practice the unglamorous parts of running infrastructure: monito
 
 ```mermaid
 flowchart LR
-  D[Desktop / laptop / phone] -- Tailscale --> TS[Tailnet]
-  DC[Discord<br/>text + voice] <--> JB
-  TS --> DNS[AdGuard Home x2<br/>primary on the M920q, synced replica on the NAS<br/>filtering + *.lab.lan rewrites]
+  D["Desktop / laptop / phone"] -->|Tailscale| TS["Tailnet"]
+  DC["Discord<br/>text + voice"] --> JB
+  JB --> DC
+  TS --> DNS["AdGuard Home x2<br/>primary on the M920q, synced replica on the NAS<br/>filtering + *.lab.lan rewrites"]
   TS --> NGX
 
-  subgraph M920[M920q - Debian 13 + Docker, always on]
-    NGX[nginx :8080<br/>vhost per service] --> HP[Homepage]
-    NGX --> GF[Grafana]
-    NGX --> KM[Uptime Kuma]
-    NGX --> NB[NetBox<br/>source of truth]
-    NGX --> N8N[n8n<br/>briefing + approvals]
-    NGX --> OW[Open WebUI]
-    NGX --> CA[control-api]
-    PR[Prometheus] --> GF
-    LX[node-exporter + cAdvisor<br/>unpoller] --> PR
-    JB[jarvis-bot / voice / speech<br/>SearXNG, sentinel]
-    JB -- read-only --> PR
-    JB -- read-only --> NB
-    JB -- request_action --> N8N
-    N8N -- after Approve --> CA
+  subgraph M920["M920q - Debian 13 + Docker, always on"]
+    NGX["nginx :8080<br/>vhost per service"] --> HP["Homepage"]
+    NGX --> GF["Grafana"]
+    NGX --> KM["Uptime Kuma"]
+    NGX --> NB["NetBox<br/>source of truth"]
+    NGX --> N8N["n8n<br/>briefing + approvals"]
+    NGX --> OW["Open WebUI"]
+    NGX --> CA["control-api"]
+    PR["Prometheus"] --> GF
+    LX["node-exporter + cAdvisor<br/>unpoller"] --> PR
+    JB["jarvis-bot, voice, speech<br/>SearXNG, sentinel"]
+    JB -->|"read only"| PR
+    JB -->|"read only"| NB
+    JB -->|"request_action"| N8N
+    N8N -->|"after Approve"| CA
   end
 
-  subgraph NAS[DXP2800 NAS - Docker, always on]
-    NUT[NUT server] --> NUTX[nut-exporter]
-    NE[node-exporter + cAdvisor<br/>smartctl-exporter]
-    SCR[Scrutiny]
-    JF[jarvis-files<br/>read-only index]
+  subgraph NAS["DXP2800 NAS - Docker, always on"]
+    NUT["NUT server"] --> NUTX["nut-exporter"]
+    NE["node-exporter + cAdvisor<br/>smartctl-exporter"]
+    SCR["Scrutiny"]
+    JF["jarvis-files<br/>read-only index"]
   end
 
-  NUTX -- LAN --> PR
-  NE -- LAN --> PR
-  JB -- token --> JF
+  NUTX -->|LAN| PR
+  NE -->|LAN| PR
+  JB -->|token| JF
 
-  subgraph X570[X570 - on demand]
-    OL[Ollama qwen3:14b<br/>Kokoro TTS - GPU]
+  subgraph X570["X570 - on demand"]
+    OL["Ollama qwen3:14b<br/>Kokoro TTS on GPU"]
   end
   JB --> OL
-  CA -- Wake-on-LAN / Tailscale SSH --> X570
+  CA -->|"WoL / Tailscale SSH"| OL
 
-  subgraph T430[T430 - Proxmox, on demand]
-    PVE[Proxmox + node_exporter]
-    IDRAC[iDRAC8 Redfish]
+  subgraph T430["T430 - Proxmox, on demand"]
+    PVE["Proxmox + node_exporter"]
+    IDRAC["iDRAC8 Redfish"]
   end
   PVE --> PR
-  CA -- Redfish / Proxmox API --> IDRAC
+  CA -->|"Redfish / Proxmox API"| IDRAC
 
-  UPS[(CyberPower UPS)] -- USB --> NUT
-  NUT -. secondary .-> PVE
-  NUT -. secondary .-> M920
-  KM -- alerts --> DC
+  UPS[("CyberPower UPS")] -->|USB| NUT
+  NUT -.->|secondary| PVE
+  NUT -.->|secondary| LX
+  KM -->|alerts| DC
 
-  M920 -- nightly export --> DROP[NAS drop folder]
-  DROP --> BK[homelab-backup.sh<br/>weekly]
-  BK -- rclone crypt --> GD[(Google Drive)]
+  LX -->|"nightly export"| DROP["NAS drop folder"]
+  DROP --> BK["homelab-backup.sh<br/>weekly"]
+  BK -->|"rclone crypt"| GD[("Google Drive")]
 ```
 
 Services that report on NAS hardware (UPS, drives, host metrics) stay on the NAS and publish on its LAN address only; everything people open in a browser runs on the M920q. The split lets the NAS's 8 GB of RAM go back to being a storage appliance's.
@@ -194,6 +195,8 @@ I'd rather list these than pretend they don't exist.
 docker-compose.m920q.yml           # services host stack
 docker-compose.m920q.override.yml  # Jarvis, n8n, Open WebUI, SearXNG and related services (M920q)
 docker-compose.nas.yml             # NAS stack (UPS, DNS, drive health, exporters, jarvis-files)
+control-api/                       # Flask power/VM control API + X570 page (M920q)
+searxng/                           # private metasearch settings for Jarvis (M920q)
 .env.example                       # variable names only (one .env, shared by both hosts)
 nginx/conf.d/                      # one vhost per service          (M920q)
 prometheus/ grafana/               # scrape config, datasource      (M920q)
