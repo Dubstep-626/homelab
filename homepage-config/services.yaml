@@ -222,6 +222,22 @@
                 suffix: "%"
 
 - Control:
+    - Lab Power:
+        icon: mdi-power
+        href: http://control.lab.lan:8080/lab/
+        description: Lab Up / Lab Down - T430 + guests, X570 (M920q and NAS stay up)
+        widgets:
+          - type: customapi
+            url: http://control-api:5000/lab/status
+            refreshInterval: 15000
+            mappings:
+              - field: state
+                label: Lab
+              - field: t430
+                label: T430
+              - field: x570
+                label: X570
+
     - Server Control:
         href: http://control.lab.lan:8080
         description: Power T430 (iDRAC) / start-stop VMs (Proxmox)

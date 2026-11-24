@@ -57,6 +57,8 @@ IDRAC_PASS = os.environ.get("IDRAC_PASS", "")
 IDRAC_SYSTEM_ID = os.environ.get("IDRAC_SYSTEM_ID", "System.Embedded.1")
 
 REQUEST_TIMEOUT = 8  # seconds — fail fast rather than hang the page
+# iDRAC8 can take 10-20 s to answer, especially Reset actions; 8 s caused false failures
+IDRAC_TIMEOUT = int(os.environ.get("IDRAC_TIMEOUT", "30"))
 
 
 def require_token():
@@ -99,7 +101,7 @@ def idrac_auth():
 
 def idrac_get(path):
     url = f"{IDRAC_HOST}{path}"
-    r = requests.get(url, auth=idrac_auth(), verify=False, timeout=REQUEST_TIMEOUT)
+    r = requests.get(url, auth=idrac_auth(), verify=False, timeout=IDRAC_TIMEOUT)
     r.raise_for_status()
     return r.json()
 
@@ -115,7 +117,7 @@ def idrac_reset(reset_type):
         json={"ResetType": reset_type},
         auth=idrac_auth(),
         verify=False,
-        timeout=REQUEST_TIMEOUT,
+        timeout=IDRAC_TIMEOUT,
         headers={"Content-Type": "application/json"},
     )
     r.raise_for_status()
@@ -196,6 +198,22 @@ def proxmox_vm_action(vmid, action):
         return jsonify({"ok": True, "task": data})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
+
+# ---------------------------------------------------------------------------
+# Lab Up / Lab Down (sequenced on-demand tier power) - see lab_control.py
+# ---------------------------------------------------------------------------
+from lab_control import make_bp as make_lab_bp  # noqa: E402
+
+app.register_blueprint(make_lab_bp(
+    require_token=require_token,
+    proxmox_get=proxmox_get,
+    proxmox_post=proxmox_post,
+    idrac_get=idrac_get,
+    idrac_reset=idrac_reset,
+    idrac_system_id=IDRAC_SYSTEM_ID,
+    proxmox_node=PROXMOX_NODE,
+))
 
 
 if __name__ == "__main__":

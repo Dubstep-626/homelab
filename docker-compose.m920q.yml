@@ -236,8 +236,10 @@ services:
       - X570_LAN_IP=${X570_LAN_IP}      # new
       - X570_TS_IP=${X570_TS_IP}        # new
       - X570_USER=${X570_USER}          # new
+      - DISCORD_WEBHOOK_URL=${JARVIS_WEBHOOK_URL}
     volumes:                            # new
       - ./control-api/ssh:/root/.ssh    # new
+      - /etc/localtime:/etc/localtime:ro
   # --- Cameras ---------------------------------------------------------
   scrypted:
     image: ghcr.io/koush/scrypted:latest

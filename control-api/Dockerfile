@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY x570_control.py .
+COPY lab_control.py .
 COPY templates/ templates/
 COPY static/ static/
 
