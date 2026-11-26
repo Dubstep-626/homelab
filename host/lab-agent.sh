@@ -19,7 +19,13 @@
 #                   crash-looping, no new failed systemd units, VERIFY_CMDS pass. Containers the
 #                   update stopped (e.g. a Docker daemon restart) are started once before judging.
 #   apply-detached  same, in a transient systemd unit, result posted to Discord
-#                   (for the M920q, whose update may restart lab-report itself)
+#                   (for the M920q, whose update may restart lab-report itself). With
+#                   REBOOT_IF_REQUIRED=yes it then reboots, but only if every check passed.
+#
+# Local-only verbs (refused over SSH), driven by lab-agent-boot.service:
+#   save-state      at shutdown: record the running containers
+#   boot-check      at boot: wait for Docker, start whatever was running at shutdown and isn't,
+#                   run the same verify as after updates, post the result to Discord
 #
 # Output is tab-separated lines so no jq/python is needed on the host:
 #   os_manager <apt|dnf|none>   os_update <pkg> <new-version>   container_update <dir> <service> <image>
@@ -35,7 +41,9 @@ SKIP_SERVICES="nut-server nut-exporter"  # never pulled or recreated (NUT stays 
 PIN_PACKAGES="nut nut-client nut-server nut-monitor"  # apt-mark hold / dnf --exclude
 OS_UPDATES=auto                       # auto | none (UGOS: vendor-managed -> none)
 BACKUP_UNITS=""                       # e.g. "homelab-backup.service"
-DISCORD_WEBHOOK_URL=""                # only used by apply-detached
+DISCORD_WEBHOOK_URL=""                # apply-detached and boot-check post here
+REBOOT_IF_REQUIRED=no                 # yes: apply-detached reboots when a reboot is pending and all checks passed
+STATE_DIR=/var/lib/lab-agent          # containers running at last shutdown
 VERIFY_WAIT=240                       # s for containers to be running/healthy again after apply
 VERIFY_SETTLE=60                      # s of watching restart counts (crash-loop detection)
 VERIFY_CMDS=()                        # host-specific checks, each must exit 0, e.g. ("upsc cyberpower@192.168.0.172 ups.status")
@@ -225,7 +233,7 @@ verify() {
     # containers stopped outright (not unhealthy/starting) get one start: that restores the
     # state from before the update, it is not a new change
     for n in $(grep -E ':(exited|created),' <<<"$left" | cut -d: -f1); do
-      docker start "$n" >/dev/null 2>&1 && out healed "started $n (stopped by the update)"
+      docker start "$n" >/dev/null 2>&1 && out healed "started $n (${HEAL_REASON:-stopped by the update})"
     done
     [ -n "$left" ] && left=$(wait_back 120)
     for n in $left; do out verify_fail "container ${n%%:*} ${n#*:}"; rc=1; done
@@ -246,6 +254,46 @@ verify() {
   return $rc
 }
 
+# ---- discord ---------------------------------------------------------------
+post() {   # post "<title>" "<tab-separated log>"
+  [ -n "$DISCORD_WEBHOOK_URL" ] || return 0
+  local msg="$1"$'\n'"$(sed 's/\t/ /g' <<<"$2")"
+  msg=$(printf '%s' "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk 'BEGIN{ORS="\\n"} {print}')
+  curl -fsS -m 15 -H 'Content-Type: application/json' \
+    -d "{\"username\":\"Lab Report\",\"content\":\"${msg:0:1900}\"}" "$DISCORD_WEBHOOK_URL" >/dev/null || true
+}
+
+# ---- boot / shutdown -------------------------------------------------------
+save_state() {
+  mkdir -p "$STATE_DIR"
+  docker ps --format '{{.Names}}' 2>/dev/null | sort > "$STATE_DIR/containers.tmp" \
+    && [ -s "$STATE_DIR/containers.tmp" ] && mv "$STATE_DIR/containers.tmp" "$STATE_DIR/containers"
+  date +%s > "$STATE_DIR/clean-shutdown"
+}
+
+boot_check() {
+  local log rc=0 i clean="unclean shutdown or first run"
+  for i in $(seq 36); do docker info >/dev/null 2>&1 && break; sleep 5; done   # up to 3 min for Docker
+  sleep 60                                              # let restart policies do their work first
+  if [ -s "$STATE_DIR/containers" ]; then
+    BEFORE_CTRS=$(cat "$STATE_DIR/containers")
+    [ -f "$STATE_DIR/clean-shutdown" ] && clean="clean shutdown $(date -d @"$(cat "$STATE_DIR/clean-shutdown")" '+%a %H:%M')"
+  else   # no record: expect everything that is set to restart on its own
+    BEFORE_CTRS=$(docker ps -aq | xargs -r docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}}' \
+                  | awk '$2=="always" || $2=="unless-stopped" {sub("/","",$1); print $1}' | sort)
+  fi
+  rm -f "$STATE_DIR/clean-shutdown"
+  BEFORE_FAILED=""                                      # any failed unit after boot counts
+  HEAL_REASON="was running before shutdown, not after boot"
+  log=$( { verify || echo "__fail"; reboot_check; } 2>&1 )
+  grep -q '^__fail' <<<"$log" && rc=1
+  log=$(grep -v '^__fail' <<<"$log")
+  local icon="✅"; [ $rc -ne 0 ] && icon="⚠️"
+  post "$icon **$HOST booted** · kernel $(uname -r) · after $clean" "$log"
+  echo "$log"
+  return $rc
+}
+
 # ---- apply -----------------------------------------------------------------
 apply() {
   local notify=${1:-} log rc=0
@@ -257,24 +305,34 @@ apply() {
   log=$(grep -v '^__fail' <<<"$log")
   [ -z "$log" ] && log="applied nothing (already current)"
   echo "$log"
-  if [ "$notify" = --notify ] && [ -n "$DISCORD_WEBHOOK_URL" ]; then
+  if [ "$notify" = --notify ]; then
     local icon="✅"; [ $rc -ne 0 ] && icon="⚠️"
-    local msg="$icon **Updates on $HOST**"$'\n'"$(sed 's/\t/ /g' <<<"$log")"
-    msg=$(printf '%s' "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk 'BEGIN{ORS="\\n"} {print}')
-    curl -fsS -m 15 -H 'Content-Type: application/json' \
-      -d "{\"username\":\"Lab Report\",\"content\":\"${msg:0:1900}\"}" "$DISCORD_WEBHOOK_URL" >/dev/null || true
+    post "$icon **Updates on $HOST**" "$log"
+    if [ "$REBOOT_IF_REQUIRED" = yes ] && grep -q '^reboot_required' <<<"$log"; then
+      if [ $rc -eq 0 ]; then
+        post "♻️ **$HOST rebooting** for: $(grep '^reboot_required' <<<"$log" | head -1 | cut -f2)" \
+             "boot check will report when it is back"
+        flock -u 9; systemctl reboot
+      else
+        post "⏸️ **$HOST not rebooting**: a check failed, leaving it up so you can look" ""
+      fi
+    fi
   fi
   return $rc
 }
 
 # ---- dispatch --------------------------------------------------------------
-if [ "${1:-}" = ssh ]; then set -- "${2:-}"; fi   # forced-command entry: one word, no extra args
+via_ssh=0
+if [ "${1:-}" = ssh ]; then via_ssh=1; set -- "${2:-}"; fi   # forced-command entry: one word, no extra args
 verb=${1:-}
+case "$verb" in save-state|boot-check) [ $via_ssh -eq 1 ] && { out error "refused: '$verb' is local-only"; exit 2; };; esac
 case "$verb" in
   ping)            echo ok ;;
   check)           os_check; containers_check ;;
   backups)         backups ;;
   apply)           apply "${2:-}" ;;
+  save-state)      save_state ;;
+  boot-check)      boot_check ;;
   apply-detached)
     unit="lab-agent-apply-$(date +%s)"
     systemd-run --quiet --collect --unit="$unit" /usr/local/sbin/lab-agent.sh apply --notify \

@@ -24,8 +24,10 @@ verify (containers back + healthy, no crash loops, no new failed units, host
 checks) plus node-exporter up in Prometheus; any failure stops the run. Then an
 after-check (containers, web UIs/APIs, DNS through both AdGuards, UPS) gates the
 M920q, which runs last as a detached systemd unit (its update may restart this
-container) and posts its own verified result; a flag in /data triggers the final
-after-check ~10 min later, surviving that restart. Never reboots anything.
+container) and posts its own verified result. If a reboot is pending and every check
+passed, the M920q reboots itself (REBOOT_IF_REQUIRED=yes in its lab-agent.conf) and
+its boot check posts when it is back. A flag in /data triggers the final after-check
+~10 min later, surviving that restart/reboot. Nothing else is ever rebooted.
 
 Routes:  GET /health   GET /last (last report JSON)
          POST /run[?lab=0&post=0]  POST /apply   (both: Authorization: Bearer CONTROL_API_TOKEN)
@@ -538,6 +540,7 @@ async def postcheck_loop():
     """Runs the after-check once the detached M920q update should be done. The flag lives in /data,
     so it survives this container being restarted by that very update."""
     flag = DATA / "postcheck.json"
+    await asyncio.sleep(120)                # after a restart/reboot, let the stack settle before judging
     while True:
         try:
             if flag.exists() and time.time() >= json.loads(flag.read_text()).get("due", 0):

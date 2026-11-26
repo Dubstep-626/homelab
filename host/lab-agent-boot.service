@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab health check at boot (and record running containers at shutdown)
+# Ordered after Docker, so at shutdown this stops (save-state) before Docker stops the containers.
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lab-agent.sh boot-check
+ExecStop=/usr/local/sbin/lab-agent.sh save-state
+TimeoutStartSec=15min
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

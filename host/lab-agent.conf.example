@@ -8,12 +8,14 @@ COMPOSE_DIRS="/opt/homelab/homelab-bundle /opt/homelab/netbox"
 BACKUP_UNITS="m920q-backup.service"
 DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy"   # same as JARVIS_WEBHOOK_URL
 VERIFY_CMDS=("upsc cyberpower@192.168.0.172 ups.status")
+REBOOT_IF_REQUIRED=yes     # reboot after updates when a kernel/libc needs it and every check passed
 
 # ---------------- nas (UGOS: OS updates are vendor-managed) ----------------
 # OS_UPDATES=none
 # COMPOSE_DIRS="/volume1/docker/homelab-bundle /volume1/docker/Alert"
 # BACKUP_UNITS="homelab-backup.service"
 # VERIFY_CMDS=("docker exec nut-server upsc cyberpower@localhost ups.status")
+# DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy"   # for the boot check
 
 # ---------------- pve (T430) ----------------
 # COMPOSE_DIRS=""

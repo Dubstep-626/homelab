@@ -91,7 +91,7 @@
           "value": "1572176540962259035",
           "mode": "id"
         },
-        "message": "={{ '**Lab Report requests approval:** apply pending updates, one host at a time (nas → pve → deus-vult → m920q last). No reboots; NUT stays pinned.\\n' + $json.updates_text }}",
+        "message": "={{ '**Lab Report requests approval:** apply pending updates, one host at a time (nas → pve → deus-vult → m920q last). Each host is health-checked before the next; the M920q reboots itself if a kernel update needs it and all checks passed. NUT stays pinned.\\n' + $json.updates_text }}",
         "approvalOptions": {
           "values": {
             "approvalType": "double",

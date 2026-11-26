@@ -9,7 +9,8 @@ Sunday 9 AM (after the 4 AM offsite backup) n8n calls `lab-report`, which:
 3. Puts each box back the way it found it, posts the report to Discord, and returns it to n8n.
 4. If anything is pending, n8n posts Approve/Deny. Approve -> `POST /apply`: one host at a time
    (nas -> pve -> deus-vult), then the M920q last as a detached systemd unit that posts its own result.
-   Never reboots. NUT is skipped/held.
+   Only the M920q ever reboots: when a reboot is pending after its updates and every check passed
+   (`REBOOT_IF_REQUIRED=yes`). NUT is skipped/held.
 
 ### Health checks after updates
 - **On each host (lab-agent `apply`):** snapshot running containers and failed systemd units first; after
@@ -82,6 +83,17 @@ credential as "Jarvis - Actions" on the two Discord nodes, activate.
 - `GET http://lab-report:8000/last` returns the last report (for Jarvis later).
 - Watchtower (monitor-only) and Diun now overlap with this; either can go once you trust the report.
 - On Fedora, a kernel update with the NVIDIA akmod builds on the next boot; the first Lab Up after it is slower.
+
+## Boot check (always-on hosts: M920q, NAS)
+`host/lab-agent-boot.service` records the running containers at shutdown and, at boot, waits for Docker,
+starts anything from that list that didn't come back, runs the same verify as after updates, and posts
+"✅/⚠️ <host> booted" to Discord (needs `DISCORD_WEBHOOK_URL` in that host's `/etc/lab-agent.conf`).
+After an unclean shutdown it expects every container with a restart policy instead.
+```bash
+sudo install -m 0644 host/lab-agent-boot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable lab-agent-boot.service
+sudo systemctl start lab-agent-boot.service   # first run now: takes ~2 min, posts to Discord
+```
 
 ## NAS (UGOS)
 UGOS forces every SSH login through `/etc/ssh/force_command.sh`, which overrides `command=` in
