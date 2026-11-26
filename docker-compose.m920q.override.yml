@@ -126,7 +126,35 @@ services:
     networks:
       - homelab
 
+  # Weekly full lab report + approve-gated updates (n8n "Lab - Weekly Report").
+  # Talks to control-api for power, lab-agent.sh on each host over SSH. See docs/LAB-REPORT.md
+  lab-report:
+    build: ./lab-report
+    container_name: lab-report
+    restart: unless-stopped
+    environment:
+      - CONTROL_API_TOKEN=${CONTROL_API_TOKEN}
+      - DISCORD_WEBHOOK_URL=${JARVIS_WEBHOOK_URL}
+      - IDRAC_HOST=${IDRAC_HOST}
+      - IDRAC_RO_USER=${IDRAC_RO_USER}
+      - IDRAC_RO_PASS=${IDRAC_RO_PASS}
+      - IDRAC_SYSTEM_ID=${IDRAC_SYSTEM_ID:-System.Embedded.1}
+      - ADGUARD_USER=${ADGUARD_USER}
+      - ADGUARD_PASS=${ADGUARD_PASS}
+      - TS_OAUTH_CLIENT_ID=${TS_OAUTH_CLIENT_ID}
+      - TS_OAUTH_CLIENT_SECRET=${TS_OAUTH_CLIENT_SECRET}
+      - AGENTS=${LAB_AGENTS:-nas=Havok@192.168.0.172 pve=root@192.168.0.10 deus-vult=mitch@192.168.0.24 m920q=havok@192.168.0.91}
+      - TS_IGNORE=${LAB_TS_IGNORE:-}
+      - TZ=America/Chicago
+    volumes:
+      - lab-report-data:/data
+      - ./lab-report/ssh:/root/.ssh      # id_ed25519 (+ known_hosts, written on first contact)
+    networks:
+      - homelab
+      - jarvis-logs                      # reach docker-proxy (read-only Docker API)
+
 volumes:
+  lab-report-data:
   jarvis-bot-data:
   sentinel-data:
   n8n-data:

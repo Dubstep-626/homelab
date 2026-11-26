@@ -1,0 +1,25 @@
+# /etc/lab-agent.conf - per-host settings for /usr/local/sbin/lab-agent.sh
+# (root:root 0600; it may hold the Discord webhook). Pick the block for the host.
+
+# ---------------- m920q ----------------
+# Use the same -f files you deploy with. If .env sets COMPOSE_FILE, give the dir alone.
+COMPOSE_DIRS="/opt/homelab/homelab-bundle:docker-compose.m920q.yml,docker-compose.m920q.override.yml /opt/homelab/netbox"
+BACKUP_UNITS="m920q-backup.service"
+DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy"   # same as JARVIS_WEBHOOK_URL
+
+# ---------------- nas (UGOS: OS updates are vendor-managed) ----------------
+# OS_UPDATES=none
+# COMPOSE_DIRS="/volume1/docker/homelab-bundle /volume1/docker/Alert"
+# BACKUP_UNITS="homelab-backup.service"
+
+# ---------------- pve (T430) ----------------
+# COMPOSE_DIRS=""
+# BACKUP_UNITS=""
+
+# ---------------- deus-vult (X570, Fedora) ----------------
+# COMPOSE_DIRS=""            # node-exporter runs here; add its dir if it is a compose project
+# BACKUP_UNITS=""
+
+# Shared defaults (uncomment to change):
+# SKIP_SERVICES="nut-server nut-exporter"
+# PIN_PACKAGES="nut nut-client nut-server nut-monitor"

@@ -16,3 +16,4 @@ control-api/ssh/
 adguard/
 __pycache__/
 node_modules/
+lab-report/ssh/
