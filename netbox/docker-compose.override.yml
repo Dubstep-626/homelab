@@ -1,8 +1,17 @@
 services:
   netbox:
+    restart: unless-stopped
     networks:
       - default
       - homelab
+  netbox-worker:
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  redis-cache:
+    restart: unless-stopped
 networks:
   homelab:
     external: true
