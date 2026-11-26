@@ -267,6 +267,7 @@ services:
       - NUT_EXPORTER_SERVER=nut-server
       - NUT_EXPORTER_USERNAME=${NUT_MON_USER}
       - NUT_EXPORTER_PASSWORD=${NUT_MON_PASSWORD}
+      - NUT_EXPORTER_VARIABLES=battery.charge,battery.voltage,battery.voltage.nominal,battery.runtime,input.voltage,input.voltage.nominal,ups.load,ups.status
 
   jarvis-files:
     build: ./jarvis-files
