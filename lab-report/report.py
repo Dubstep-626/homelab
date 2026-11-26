@@ -252,7 +252,7 @@ async def c_hosts():
     cpu, cpu7, ram, ram7, temp, up = await asyncio.gather(
         by_host(CPU), by_host(f"avg_over_time(({CPU})[7d:15m])"),
         by_host(RAM), by_host(f"max_over_time(({RAM})[7d:15m])"),
-        by_host("max by (host) (node_hwmon_temp_celsius)"),
+        by_host("max by (host) (node_hwmon_temp_celsius < 120)"),  # unconnected headers read 127 C
         by_host("max by (host) (time() - node_boot_time_seconds)"))
     disks = await prom(f"100 * (1 - node_filesystem_avail_bytes{{{FS}}} / node_filesystem_size_bytes{{{FS}}})")
     hosts = {}
@@ -479,7 +479,7 @@ def build(r):
     if u:
         on_line = u["status"] == 1
         L(f"\n**UPS** {'on line' if on_line else '⚠️ NOT on line'} · {f0(u['charge'], '%')} charge · "
-          f"{f0(u['load'], '%')} load · {f0((u['runtime'] or 0) / 60, ' min')} runtime · "
+          f"{f0(u['load'], '%')} load · {f0(u['runtime'] / 60 if u['runtime'] else None, ' min')} runtime · "
           f"{f0(u['ob_events'])} on-battery events this week")
         if not on_line:
             attn.append("UPS is not on line power")
