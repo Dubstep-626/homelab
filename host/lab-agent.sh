@@ -14,7 +14,10 @@
 #   ping            -> "ok"
 #   check           pending OS packages + container image updates (pulls images, changes nothing running)
 #   backups         result/age of the systemd backup units in BACKUP_UNITS
-#   apply           apply OS + container updates; never reboots; pinned packages held
+#   apply           apply OS + container updates, then verify the host; never reboots; pinned packages held.
+#                   Verify: every container running before is running again (and healthy), none
+#                   crash-looping, no new failed systemd units, VERIFY_CMDS pass. Containers the
+#                   update stopped (e.g. a Docker daemon restart) are started once before judging.
 #   apply-detached  same, in a transient systemd unit, result posted to Discord
 #                   (for the M920q, whose update may restart lab-report itself)
 #
@@ -22,6 +25,7 @@
 #   os_manager <apt|dnf|none>   os_update <pkg> <new-version>   container_update <dir> <service> <image>
 #   reboot_required <reason>    backup <unit> <result> <exit-status> <finished-epoch>
 #   applied <what>              failed <what>     error <message>
+#   verify_ok <what>            verify_fail <what>   healed <what>
 set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -32,6 +36,9 @@ PIN_PACKAGES="nut nut-client nut-server nut-monitor"  # apt-mark hold / dnf --ex
 OS_UPDATES=auto                       # auto | none (UGOS: vendor-managed -> none)
 BACKUP_UNITS=""                       # e.g. "homelab-backup.service"
 DISCORD_WEBHOOK_URL=""                # only used by apply-detached
+VERIFY_WAIT=240                       # s for containers to be running/healthy again after apply
+VERIFY_SETTLE=60                      # s of watching restart counts (crash-loop detection)
+VERIFY_CMDS=()                        # host-specific checks, each must exit 0, e.g. ("upsc cyberpower@192.168.0.172 ups.status")
 [ -r /etc/lab-agent.conf ] && . /etc/lab-agent.conf
 
 HOST=$(hostname -s)
@@ -182,12 +189,70 @@ backups() {
   done
 }
 
+# ---- verify ----------------------------------------------------------------
+snapshot() {   # state captured before any change
+  BEFORE_CTRS=$(docker ps --format '{{.Names}}' 2>/dev/null | sort)
+  BEFORE_FAILED=$(systemctl list-units --state=failed --plain --no-legend 2>/dev/null | awk '{print $1}' | sort)
+}
+
+ctr_state() {  # "<status> <health>" e.g. "running healthy", "running none", "exited none"
+  docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$1" 2>/dev/null \
+    || echo "missing none"
+}
+
+not_back() {   # containers from the snapshot that are not running+healthy yet
+  local n st
+  for n in $BEFORE_CTRS; do
+    st=$(ctr_state "$n")
+    case "$st" in "running healthy"|"running none") ;; *) echo "$n:${st// /,}";; esac
+  done
+}
+
+wait_back() {  # wait up to $1 s; "running starting" counts as not back yet
+  local end=$((SECONDS + $1)) left
+  while :; do
+    left=$(not_back)
+    [ -z "$left" ] || [ $SECONDS -ge $end ] && { echo "$left"; return; }
+    sleep 10
+  done
+}
+
+verify() {
+  local rc=0 left n c1 c2 looping="" newfail cmd
+  if command -v docker >/dev/null && [ -n "$BEFORE_CTRS" ]; then
+    docker info >/dev/null 2>&1 || { out verify_fail "docker daemon not answering"; return 1; }
+    left=$(wait_back "$VERIFY_WAIT")
+    # containers stopped outright (not unhealthy/starting) get one start: that restores the
+    # state from before the update, it is not a new change
+    for n in $(grep -E ':(exited|created),' <<<"$left" | cut -d: -f1); do
+      docker start "$n" >/dev/null 2>&1 && out healed "started $n (stopped by the update)"
+    done
+    [ -n "$left" ] && left=$(wait_back 120)
+    for n in $left; do out verify_fail "container ${n%%:*} ${n#*:}"; rc=1; done
+    # crash loops: restart counts must hold still for VERIFY_SETTLE seconds
+    c1=$(for n in $BEFORE_CTRS; do docker inspect -f '{{.Name}} {{.RestartCount}}' "$n" 2>/dev/null; done)
+    sleep "$VERIFY_SETTLE"
+    c2=$(for n in $BEFORE_CTRS; do docker inspect -f '{{.Name}} {{.RestartCount}}' "$n" 2>/dev/null; done)
+    looping=$(diff <(echo "$c1") <(echo "$c2") | awk '/^>/ {sub("/","",$2); print $2}')
+    for n in $looping; do out verify_fail "container $n restarting (crash loop)"; rc=1; done
+    [ $rc -eq 0 ] && out verify_ok "$(wc -w <<<"$BEFORE_CTRS") containers running, none restarting"
+  fi
+  newfail=$(comm -13 <(echo "$BEFORE_FAILED") <(systemctl list-units --state=failed --plain --no-legend 2>/dev/null | awk '{print $1}' | sort) | grep . || true)
+  for n in $newfail; do out verify_fail "systemd unit $n failed"; rc=1; done
+  for cmd in "${VERIFY_CMDS[@]}"; do
+    if timeout 30 bash -c "$cmd" >/dev/null 2>&1; then out verify_ok "$cmd"
+    else out verify_fail "check failed: $cmd"; rc=1; fi
+  done
+  return $rc
+}
+
 # ---- apply -----------------------------------------------------------------
 apply() {
   local notify=${1:-} log rc=0
   exec 9>/run/lab-agent.lock
   flock -n 9 || { out error "another apply is running"; return 1; }
-  log=$( { os_apply || echo "__fail"; containers_apply || echo "__fail"; reboot_check; } 2>&1 )
+  snapshot
+  log=$( { os_apply || echo "__fail"; containers_apply || echo "__fail"; verify || echo "__fail"; reboot_check; } 2>&1 )
   grep -q '^__fail' <<<"$log" && rc=1
   log=$(grep -v '^__fail' <<<"$log")
   [ -z "$log" ] && log="applied nothing (already current)"

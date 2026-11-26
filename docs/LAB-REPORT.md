@@ -8,8 +8,21 @@ Sunday 9 AM (after the 4 AM offsite backup) n8n calls `lab-report`, which:
    secondary, sentinel, Tailscale devices, and pending apt/dnf packages + stale container images.
 3. Puts each box back the way it found it, posts the report to Discord, and returns it to n8n.
 4. If anything is pending, n8n posts Approve/Deny. Approve -> `POST /apply`: one host at a time
-   (nas -> pve -> deus-vult), stop at the first failure, restore power, then the M920q last as a detached
-   systemd unit that posts its own result. Never reboots. NUT is skipped/held.
+   (nas -> pve -> deus-vult), then the M920q last as a detached systemd unit that posts its own result.
+   Never reboots. NUT is skipped/held.
+
+### Health checks after updates
+- **On each host (lab-agent `apply`):** snapshot running containers and failed systemd units first; after
+  updating, wait up to 4 min for every container that was running to be running again (and `healthy` if it
+  has a healthcheck), `docker start` anything the update stopped outright (e.g. a Docker daemon restart -
+  restoring the prior state, reported as 🩹), watch restart counts for 60 s (crash loops), flag new failed
+  units, and run that host's `VERIFY_CMDS` (UPS reachable, Proxmox API, Ollama...).
+- **From lab-report:** the host's node-exporter must be back up in Prometheus. Any failure stops the run;
+  later hosts are left alone.
+- **Before the M920q:** an after-check (containers on both Docker hosts, web UIs/APIs answering, DNS through
+  both AdGuards, UPS) must be clean, or the M920q is not started.
+- **After the M920q:** a flag in the lab-report volume triggers the same after-check ~10 min later, even if
+  the update restarted lab-report itself.
 
 `lab-agent.sh` is the only thing lab-report can run on a host: a forced-command SSH key that accepts
 exactly `ping | check | backups | apply | apply-detached`.
@@ -43,12 +56,14 @@ restrict,command="/usr/local/sbin/lab-agent.sh ssh \"$SSH_ORIGINAL_COMMAND\"" ss
 deus-vult only: plain sshd must be on (control-api uses Tailscale SSH, which ignores authorized_keys):
 `sudo systemctl enable --now sshd`. lab-report connects to the LAN IP, not the Tailscale IP.
 
+Add the host's `VERIFY_CMDS` line from the example config (checks run after updates).
+
 Local sanity check on each host: `sudo /usr/local/sbin/lab-agent.sh check`.
 
 ### 3. Deploy
 ```bash
 docker compose -f docker-compose.m920q.yml -f docker-compose.m920q.override.yml up -d --build lab-report
-for h in Havok@192.168.0.172 root@192.168.0.10 mitch@192.168.0.24 havok@192.168.0.91; do
+for h in labreport@192.168.0.172 root@192.168.0.10 mdubin@192.168.0.24 havok@192.168.0.91; do
   docker exec lab-report ssh -o StrictHostKeyChecking=accept-new $h ping; done     # expect "ok" x4
 ```
 Fix the X570 username in `LAB_AGENTS` (.env) if it isn't `mitch`.
@@ -67,3 +82,20 @@ credential as "Jarvis - Actions" on the two Discord nodes, activate.
 - `GET http://lab-report:8000/last` returns the last report (for Jarvis later).
 - Watchtower (monitor-only) and Diun now overlap with this; either can go once you trust the report.
 - On Fedora, a kernel update with the NVIDIA akmod builds on the next boot; the first Lab Up after it is slower.
+
+## NAS (UGOS)
+UGOS forces every SSH login through `/etc/ssh/force_command.sh`, which overrides `command=` in
+authorized_keys, so the NAS uses a dedicated `labreport` user whose login shell is
+`host/nas/lab-agent-shell` (as root on the NAS):
+```bash
+install -m 0755 lab-agent-shell /usr/local/sbin/lab-agent-shell
+echo /usr/local/sbin/lab-agent-shell >> /etc/shells
+groupadd -r report-admin
+useradd -r -m -d /var/lib/labreport -s /usr/local/sbin/lab-agent-shell -g report-admin labreport
+chmod 750 /var/lib/labreport
+install -d -m 700 -o labreport -g report-admin /var/lib/labreport/.ssh
+echo "restrict $(cat lab-report.pub)" > /var/lib/labreport/.ssh/authorized_keys   # chown + chmod 600
+echo "labreport ALL=(root) NOPASSWD: /usr/local/sbin/lab-agent.sh *" > /etc/sudoers.d/lab-agent
+```
+`LAB_AGENTS` uses `nas=labreport@192.168.0.172`. A UGOS firmware update may reset `/etc/passwd`; if the
+report shows the NAS agent unreachable afterwards, redo this.

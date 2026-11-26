@@ -19,9 +19,13 @@ backup) calls POST /run. One run:
      there are updates and calls POST /apply on Approve.
 
 POST /apply runs in the background: powers up only what needs it, updates one
-host at a time (nas -> pve -> deus-vult), stops at the first failure, restores
-power, then starts the M920q last as a detached systemd unit (its own update may
-restart this container), which posts its own result. Never reboots anything.
+host at a time (nas -> pve -> deus-vult). After each host: lab-agent's own
+verify (containers back + healthy, no crash loops, no new failed units, host
+checks) plus node-exporter up in Prometheus; any failure stops the run. Then an
+after-check (containers, web UIs/APIs, DNS through both AdGuards, UPS) gates the
+M920q, which runs last as a detached systemd unit (its update may restart this
+container) and posts its own verified result; a flag in /data triggers the final
+after-check ~10 min later, surviving that restart. Never reboots anything.
 
 Routes:  GET /health   GET /last (last report JSON)
          POST /run[?lab=0&post=0]  POST /apply   (both: Authorization: Bearer CONTROL_API_TOKEN)
@@ -67,13 +71,20 @@ def pairs(s):  # "a=x b=y" -> {"a": "x", "b": "y"}
 DOCKER = pairs(E("DOCKER_ENDPOINTS", "m920q=http://docker-proxy:2375 nas=http://192.168.0.172:2375"))
 CONTAINER_IGNORE = set(E("CONTAINER_IGNORE", "kuma-seed").split())
 # host -> user@ip for lab-agent; order here is the apply order (m920q is always forced last)
-AGENTS = pairs(E("AGENTS", "nas=Havok@192.168.0.172 pve=root@192.168.0.10 "
-                           "deus-vult=mitch@192.168.0.24 m920q=havok@192.168.0.91"))
+AGENTS = pairs(E("AGENTS", "nas=labreport@192.168.0.172 pve=root@192.168.0.10 "
+                           "deus-vult=mdubin@192.168.0.24 m920q=havok@192.168.0.91"))
 ON_DEMAND = {"pve": "t430", "deus-vult": "x570"}   # agent host -> control-api box
 TS_IGNORE = set(E("TS_IGNORE", "").split())        # tailnet devices allowed to be offline (e.g. laptops)
 SETTLE = int(E("SCRAPE_SETTLE", "90"))             # s after Lab Up before reading Prometheus
 DISK_WARN, RAM_WARN, TEMP_WARN = (float(E("DISK_WARN", "85")), float(E("RAM_WARN", "90")),
                                   float(E("TEMP_WARN", "80")))
+PROBES = pairs(E("PROBES", "netbox=http://netbox:8080/login/ n8n=http://n8n:5678/healthz homepage=http://homepage:3000/ "
+                           "grafana=http://grafana:3000/api/health prometheus=http://prometheus:9090/-/ready "
+                           "kuma=http://uptime-kuma:3001/ control-api=http://control-api:5000/x570/status "
+                           "open-webui=http://open-webui:8080/health"))
+DNS_SERVERS = pairs(E("DNS_SERVERS", "adguard-primary=192.168.0.91 adguard-secondary=100.94.25.77"))
+PROM_HOST = {"pve": "t430", "deus-vult": "x570"}   # agent host -> Prometheus host label (others match)
+POSTCHECK_DELAY = int(E("POSTCHECK_DELAY", "600"))  # s after the detached M920q update before the after-check
 BACKUP_MAX_AGE = {"m920q-backup.service": 26 * 3600, "homelab-backup.service": 8 * 86400}
 
 session: aiohttp.ClientSession | None = None
@@ -434,6 +445,111 @@ async def safe(name, coro, errors):
         return None
 
 
+# ---------------------------------------------------------------- service checks
+def dns_query(server, name="github.com", timeout=3.0):
+    """Minimal A-record query over UDP: True if the server answers NOERROR with at least one answer."""
+    import random
+    import socket
+    import struct
+    tid = random.randint(0, 65535)
+    q = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0)
+    q += b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\0" + struct.pack(">HH", 1, 1)
+    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sk.settimeout(timeout)
+    try:
+        sk.sendto(q, (server, 53))
+        d, _ = sk.recvfrom(1024)
+    finally:
+        sk.close()
+    rid, flags, _qd, an = struct.unpack(">HHHH", d[:8])
+    return rid == tid and (flags & 0xF) == 0 and an > 0
+
+
+async def c_services():
+    """HTTP probes (anything under 500 counts as answering) + DNS through both AdGuards."""
+    out = {}
+
+    async def probe(name, url):
+        try:
+            async with session.get(url, timeout=T(10), allow_redirects=False) as r:
+                out[name] = (r.status < 500, f"HTTP {r.status}")
+        except Exception as e:
+            out[name] = (False, type(e).__name__)
+
+    async def dns(name, server):
+        try:
+            ok = await asyncio.to_thread(dns_query, server)
+            out[name] = (ok, "resolves" if ok else "no answer")
+        except Exception as e:
+            out[name] = (False, type(e).__name__)
+    await asyncio.gather(*(probe(n, u) for n, u in PROBES.items()), *(dns(n, a) for n, a in DNS_SERVERS.items()))
+    return out
+
+
+async def quick_check(title):
+    """Short health snapshot for after updates. Returns (text, problems)."""
+    errors = []
+    pnow = await safe("power", power(), errors) or {}
+    svc, ctr, targets, ups = await asyncio.gather(
+        safe("services", c_services(), errors), safe("containers", c_containers(), errors),
+        safe("targets", prom("up == 0"), errors), safe("ups", c_ups(), errors))
+    probs, lines = [], [title]
+    off = {h for h, box in (("t430", "t430"), ("x570", "x570")) if not pnow.get(box)}
+    for r in targets or []:
+        h = r["metric"].get("host", "")
+        if h in off:                       # on-demand box that is (back to) off
+            continue
+        probs.append(f'Prometheus target down: {r["metric"].get("job")} ({r["metric"].get("instance")})')
+    for h, c in (ctr or {}).items():
+        if "error" in c:
+            probs.append(f"{h}: Docker API unreachable ({c['error']})")
+        else:
+            lines.append(f"{'✅' if not c['bad'] else '❌'} {h} containers {c['total'] - len(c['bad'])}/{c['total']}")
+            probs += [f"{h} container {b}" for b in c["bad"]]
+    if svc:
+        bad = [f"{n} ({why})" for n, (ok, why) in svc.items() if not ok]
+        lines.append(f"{'✅' if not bad else '❌'} services {len(svc) - len(bad)}/{len(svc)} answering"
+                     + (": " + ", ".join(bad) if bad else ""))
+        probs += [f"not answering: {b}" for b in bad]
+    if ups:
+        lines.append(f"{'✅' if ups['status'] == 1 else '❌'} UPS {'on line' if ups['status'] == 1 else 'NOT on line'}")
+        if ups["status"] != 1:
+            probs.append("UPS not on line (or NUT not reporting)")
+    probs += [f"couldn't check {e}" for e in errors]
+    if probs:
+        lines += ["**Problems:**"] + [f"• {p}" for p in probs]
+    return "\n".join(lines), probs
+
+
+async def host_up_in_prometheus(host):
+    label = PROM_HOST.get(host, host)
+    for _ in range(4):                      # node-exporter scrape is 15 s; allow a minute
+        try:
+            r = await prom(f'min(up{{host="{label}"}})')
+            if r and r[0]["value"][1] == "1":
+                return True
+        except Exception:
+            pass
+        await asyncio.sleep(15)
+    return False
+
+
+async def postcheck_loop():
+    """Runs the after-check once the detached M920q update should be done. The flag lives in /data,
+    so it survives this container being restarted by that very update."""
+    flag = DATA / "postcheck.json"
+    while True:
+        try:
+            if flag.exists() and time.time() >= json.loads(flag.read_text()).get("due", 0):
+                flag.unlink()
+                async with busy:
+                    text, probs = await quick_check("🩺 **After-update check (all hosts, incl. M920q)**")
+                    await discord(text if probs else text + "\n✅ Everything came back.")
+        except Exception as e:
+            log.warning("postcheck failed: %s", e)
+        await asyncio.sleep(30)
+
+
 # ---------------------------------------------------------------- report
 def f0(x, unit=""):
     return "?" if x is None else f"{x:.0f}{unit}"
@@ -515,6 +631,12 @@ def build(r):
         L(f"{'✅' if ok else '❌'} AdGuard {name} {a['version']}: {a['queries']:,} queries, {a['blocked_pct']:.1f}% blocked")
         if not ok:
             attn.append(f"AdGuard {name}: running={a['running']} protection={a['protection']}")
+    sv = r.get("services") or {}
+    if sv:
+        bad = [f"{n} ({why})" for n, (ok, why) in sv.items() if not ok]
+        L(f"{'✅' if not bad else '❌'} Services: {len(sv) - len(bad)}/{len(sv)} answering (web UIs, APIs, DNS)"
+          + (" · " + ", ".join(bad) if bad else ""))
+        attn += [f"not answering: {b}" for b in bad]
     s = r["sentinel"]
     if s:
         last = s.get("last_scan") or {}
@@ -570,14 +692,15 @@ async def run_report(do_lab=True, post=True):
         except Exception as e:
             errors.append(f"Lab Up: {e}")
     pnow = await safe("power", power(), errors) or {}
-    keys = ["hosts", "targets", "ups", "scrutiny", "idrac", "containers", "adguard", "sentinel", "tailscale", "agents"]
+    keys = ["hosts", "targets", "ups", "scrutiny", "idrac", "containers", "adguard", "sentinel", "tailscale", "agents",
+            "services"]
     vals = await asyncio.gather(
         safe("hosts", c_hosts(), errors), safe("targets", c_targets(), errors), safe("ups", c_ups(), errors),
         safe("scrutiny", c_scrutiny(), errors),
         safe("idrac", c_idrac(), errors) if pnow.get("t430") else asyncio.sleep(0),
         safe("containers", c_containers(), errors), safe("adguard", c_adguard(), errors),
         safe("sentinel", c_sentinel(), errors), safe("tailscale", c_tailscale(), errors),
-        safe("agents", c_agents(pnow), errors))
+        safe("agents", c_agents(pnow), errors), safe("services", c_services(), errors))
     r = dict(zip(keys, vals))
     if prior:
         try:
@@ -622,10 +745,21 @@ async def run_apply():
                 await discord(f"⚠️ {h} did not come up; stopping here.")
                 return
             rows, rc = await agent(h, "apply", timeout=3600)
-            body = "\n".join(" ".join(r) for r in rows) or "(no output)"
+            icons = {"applied": "📦", "healed": "🩹", "verify_ok": "✅", "verify_fail": "❌", "failed": "❌",
+                     "error": "⚠️", "reboot_required": "♻️"}
+            body = "\n".join(f"{icons.get(r[0], '·')} {' '.join(r[1:])}" for r in rows) or "(no output)"
+            if not await host_up_in_prometheus(h):
+                body += f"\n❌ node-exporter for {h} not up in Prometheus"
+                rc = rc or 1
             await discord(f"{'✅' if rc == 0 else '⚠️'} **Updates on {h}**\n{body[:1700]}")
             if rc != 0:
-                await discord("Stopped after the first failure; remaining hosts untouched.")
+                await discord(f"🛑 Stopped: {h} failed its update or its health check. Remaining hosts untouched.")
+                return
+        if remote:
+            text, probs = await quick_check("🩺 **After-update check**" + (" (M920q next)" if "m920q" in hosts else ""))
+            await discord(text)
+            if probs and "m920q" in hosts:
+                await discord("🛑 Not starting the M920q update while something above is broken.")
                 return
     finally:
         if prior:
@@ -638,6 +772,9 @@ async def run_apply():
     if "m920q" in hosts:
         rows, rc = await agent("m920q", "apply-detached", timeout=60)
         await discord(f"{'🕐' if rc == 0 else '⚠️'} " + " ".join(rows[0][1:] if rows else ["m920q: no answer"]))
+        if rc == 0:
+            (DATA / "postcheck.json").write_text(json.dumps({"due": time.time() + POSTCHECK_DELAY}))
+            await discord(f"🩺 Full after-update check in ~{POSTCHECK_DELAY // 60} min.")
 
 
 # ---------------------------------------------------------------- HTTP
@@ -691,6 +828,8 @@ async def on_startup(_app):
     global session
     session = aiohttp.ClientSession()
     DATA.mkdir(parents=True, exist_ok=True)
+    t = asyncio.create_task(postcheck_loop())
+    BG.add(t)
 
 
 async def on_cleanup(_app):

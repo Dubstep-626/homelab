@@ -143,7 +143,7 @@ services:
       - ADGUARD_PASS=${ADGUARD_PASS}
       - TS_OAUTH_CLIENT_ID=${TS_OAUTH_CLIENT_ID}
       - TS_OAUTH_CLIENT_SECRET=${TS_OAUTH_CLIENT_SECRET}
-      - AGENTS=${LAB_AGENTS:-nas=Havok@192.168.0.172 pve=root@192.168.0.10 deus-vult=mitch@192.168.0.24 m920q=havok@192.168.0.91}
+      - AGENTS=${LAB_AGENTS:-nas=labreport@192.168.0.172 pve=root@192.168.0.10 deus-vult=mdubin@192.168.0.24 m920q=havok@192.168.0.91}
       - TS_IGNORE=${LAB_TS_IGNORE:-}
       - TZ=America/Chicago
     volumes:

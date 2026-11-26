@@ -7,20 +7,26 @@
 COMPOSE_DIRS="/opt/homelab/homelab-bundle /opt/homelab/netbox"
 BACKUP_UNITS="m920q-backup.service"
 DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy"   # same as JARVIS_WEBHOOK_URL
+VERIFY_CMDS=("upsc cyberpower@192.168.0.172 ups.status")
 
 # ---------------- nas (UGOS: OS updates are vendor-managed) ----------------
 # OS_UPDATES=none
 # COMPOSE_DIRS="/volume1/docker/homelab-bundle /volume1/docker/Alert"
 # BACKUP_UNITS="homelab-backup.service"
+# VERIFY_CMDS=("docker exec nut-server upsc cyberpower@localhost ups.status")
 
 # ---------------- pve (T430) ----------------
 # COMPOSE_DIRS=""
 # BACKUP_UNITS=""
+# VERIFY_CMDS=("pvesh get /version" "systemctl is-active pveproxy pvedaemon pvestatd pve-cluster" "upsc cyberpower@192.168.0.172 ups.status")
 
 # ---------------- deus-vult (X570, Fedora) ----------------
 # COMPOSE_DIRS=""            # node-exporter runs here; add its dir if it is a compose project
 # BACKUP_UNITS=""
+# VERIFY_CMDS=("curl -fsS -m 5 http://127.0.0.1:11434/api/tags" "systemctl is-active tailscaled")
 
 # Shared defaults (uncomment to change):
 # SKIP_SERVICES="nut-server nut-exporter"
 # PIN_PACKAGES="nut nut-client nut-server nut-monitor"
+# VERIFY_WAIT=240      # s for containers to come back after an update
+# VERIFY_SETTLE=60     # s of watching for crash loops

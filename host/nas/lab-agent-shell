@@ -1,0 +1,8 @@
+#!/bin/sh
+# NAS (UGOS) only: login shell for the `labreport` user.
+# UGOS sets a global ForceCommand (/etc/ssh/force_command.sh) that overrides authorized_keys command=,
+# so the restriction lives here instead. sshd runs "<this shell> -c <ForceCommand>"; the real request
+# is in SSH_ORIGINAL_COMMAND, and lab-agent.sh only accepts its five verbs.
+# Install: see docs/LAB-REPORT.md ("NAS").
+[ "$1" = "-c" ] || { echo "lab-agent only" >&2; exit 1; }
+exec sudo -n /usr/local/sbin/lab-agent.sh ssh "${SSH_ORIGINAL_COMMAND:-}"
