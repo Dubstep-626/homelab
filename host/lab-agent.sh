@@ -112,7 +112,8 @@ os_apply() {
 # Pulls newer images for running, non-skipped services and prints
 # "<dir>\t<service>\t<image>" for every container whose image is now stale.
 container_scan() {
-  local spec dir files f svcs s cid ref run cur
+  local spec dir files f svcs s cid ref run cur missing
+  local -a fl
   for spec in $COMPOSE_DIRS; do
     dir=${spec%%:*}; files=()
     if [ "$spec" != "$dir" ]; then
@@ -120,6 +121,9 @@ container_scan() {
       for f in "${fl[@]}"; do files+=(-f "$f"); done
     fi
     [ -d "$dir" ] || { out error "compose dir $dir missing"; continue; }
+    missing=""
+    for f in "${fl[@]:-}"; do [ -n "$f" ] && [ ! -f "$dir/$f" ] && missing="$missing $f"; done
+    [ -n "$missing" ] && { out error "compose file(s) missing in $dir:$missing"; fl=(); continue; }
     svcs=()
     while read -r s; do
       [ -n "$s" ] && ! is_skipped "$s" && svcs+=("$s")
@@ -138,13 +142,17 @@ container_scan() {
 }
 
 containers_check() {
-  container_scan | while IFS="$TAB" read -r spec s ref; do out container_update "${spec%%:*}" "$s" "$ref"; done
+  container_scan | while IFS="$TAB" read -r spec s ref; do
+    if [ "$spec" = error ]; then out error "$s"; else out container_update "${spec%%:*}" "$s" "$ref"; fi
+  done
 }
 
 containers_apply() {
   local rc=0 spec s ref dir files f
   declare -A todo=()
-  while IFS="$TAB" read -r spec s ref; do todo[$spec]+="$s "; done < <(container_scan)
+  while IFS="$TAB" read -r spec s ref; do
+    if [ "$spec" = error ]; then out failed "$s"; rc=1; else todo[$spec]+="$s "; fi
+  done < <(container_scan)
   for spec in "${!todo[@]}"; do
     dir=${spec%%:*}; files=()
     if [ "$spec" != "$dir" ]; then

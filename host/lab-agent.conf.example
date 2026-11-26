@@ -3,7 +3,8 @@
 
 # ---------------- m920q ----------------
 # Use the same -f files you deploy with. If .env sets COMPOSE_FILE, give the dir alone.
-COMPOSE_DIRS="/opt/homelab/homelab-bundle:docker-compose.m920q.yml,docker-compose.m920q.override.yml /opt/homelab/netbox"
+# Live files there are docker-compose.yml + docker-compose.override.yml (auto-loaded), so the dir alone is right.
+COMPOSE_DIRS="/opt/homelab/homelab-bundle /opt/homelab/netbox"
 BACKUP_UNITS="m920q-backup.service"
 DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy"   # same as JARVIS_WEBHOOK_URL
 
