@@ -195,6 +195,17 @@ backups() {
     res=$(systemctl show -p Result --value "$u" 2>/dev/null)
     st=$(systemctl show -p ExecMainStatus --value "$u" 2>/dev/null)
     ts=$(systemctl show -p ExecMainExitTimestamp --value "$u" 2>/dev/null)
+    if [ -z "$ts" ]; then
+      # not run since this boot: systemd forgot the last result. Take the time from the timer
+      # (Persistent= keeps it across reboots) and the outcome from the journal.
+      ts=$(systemctl show -p LastTriggerUSec --value "${u%.service}.timer" 2>/dev/null)
+      [ "$ts" = n/a ] && ts=""
+      case "$(journalctl -u "$u" -o cat --no-pager 2>/dev/null | grep -E 'Deactivated successfully|Failed with result' | tail -1)" in
+        *Deactivated*) res=success; st=0 ;;
+        *Failed*)      res=failed ;;
+        *)             res="unknown-since-reboot" ;;
+      esac
+    fi
     epoch=0; [ -n "$ts" ] && epoch=$(date -d "$ts" +%s 2>/dev/null || echo 0)
     out backup "$u" "${res:-unknown}" "${st:-?}" "$epoch"
   done
