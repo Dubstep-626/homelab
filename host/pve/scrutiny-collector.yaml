@@ -1,0 +1,23 @@
+# /opt/scrutiny/config/collector.yaml on pve (T430). Disks sit behind the PERC H730, so smartctl
+# reaches each physical drive as megaraid,N through one controller device. One entry with a list of
+# types (not one entry per type on the same device, which Scrutiny collapses into duplicates).
+version: 1
+host:
+  id: "pve"
+devices:
+  - device: /dev/bus/0
+    type:
+      - megaraid,0
+      - megaraid,1
+      - megaraid,2
+      - megaraid,3
+      - megaraid,4
+      - megaraid,5
+      - megaraid,6
+  # RAID virtual disks: no SMART of their own
+  - device: /dev/sda
+    ignore: true
+  - device: /dev/sdb
+    ignore: true
+api:
+  endpoint: 'http://192.168.0.172:8082'   # Scrutiny hub on the NAS (drives.lab.lan:8080 was the old NAS nginx)
