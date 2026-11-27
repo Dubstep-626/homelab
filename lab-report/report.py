@@ -258,6 +258,11 @@ async def by_host(q):
 
 FS = 'fstype!~"tmpfs|overlay|squashfs|vfat|ramfs",mountpoint!~"/ugreen.*|/boot.*"'
 CPU = '100 * (1 - avg by (host) (rate(node_cpu_seconds_total{mode="idle"}[5m])))'
+# Hottest *trusted* sensor: CPU, NVMe/SATA drives, embedded controller, GPU. Super-I/O chips (nct67xx,
+# it87) report unconnected AUXTIN inputs as 105-127 C, so they are left out.
+TEMP_CHIPS = E("TEMP_CHIPS", "k10temp|coretemp|zenpower|nvme|drivetemp|asusec|amdgpu|acpitz")
+TEMP_Q = (f'max by (host) ((node_hwmon_temp_celsius < 120) * on (instance, chip) group_left() '
+          f'node_hwmon_chip_names{{chip_name=~"{TEMP_CHIPS}"}})')
 RAM = '100 * (1 - avg by (host) (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))'
 
 
@@ -265,7 +270,7 @@ async def c_hosts():
     cpu, cpu7, ram, ram7, temp, up = await asyncio.gather(
         by_host(CPU), by_host(f"avg_over_time(({CPU})[7d:15m])"),
         by_host(RAM), by_host(f"max_over_time(({RAM})[7d:15m])"),
-        by_host("max by (host) (node_hwmon_temp_celsius < 120)"),  # unconnected headers read 127 C
+        by_host(TEMP_Q),
         by_host("max by (host) (time() - node_boot_time_seconds)"))
     disks = await prom(f"100 * (1 - node_filesystem_avail_bytes{{{FS}}} / node_filesystem_size_bytes{{{FS}}})")
     hosts = {}
