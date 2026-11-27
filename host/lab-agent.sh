@@ -14,6 +14,9 @@
 #   ping            -> "ok"
 #   check           pending OS packages + container image updates (pulls images, changes nothing running)
 #   backups         result/age of the systemd backup units in BACKUP_UNITS
+#   health          read-only version of the post-update verify, for the weekly report: containers
+#                   that should run (running now or set to restart) are up and healthy, no crash
+#                   loops, no failed systemd units, VERIFY_CMDS pass. Starts nothing.
 #   apply           apply OS + container updates, then verify the host; never reboots; pinned packages held.
 #                   Verify: every container running before is running again (and healthy), none
 #                   crash-looping, no new failed systemd units, VERIFY_CMDS pass. Containers the
@@ -230,12 +233,14 @@ verify() {
   if command -v docker >/dev/null && [ -n "$BEFORE_CTRS" ]; then
     docker info >/dev/null 2>&1 || { out verify_fail "docker daemon not answering"; return 1; }
     left=$(wait_back "$VERIFY_WAIT")
-    # containers stopped outright (not unhealthy/starting) get one start: that restores the
-    # state from before the update, it is not a new change
-    for n in $(grep -E ':(exited|created),' <<<"$left" | cut -d: -f1); do
-      docker start "$n" >/dev/null 2>&1 && out healed "started $n (${HEAL_REASON:-stopped by the update})"
-    done
-    [ -n "$left" ] && left=$(wait_back 120)
+    if [ "${HEAL:-yes}" = yes ]; then
+      # containers stopped outright (not unhealthy/starting) get one start: that restores the
+      # state from before the update, it is not a new change
+      for n in $(grep -E ':(exited|created),' <<<"$left" | cut -d: -f1); do
+        docker start "$n" >/dev/null 2>&1 && out healed "started $n (${HEAL_REASON:-stopped by the update})"
+      done
+      [ -n "$left" ] && left=$(wait_back 120)
+    fi
     for n in $left; do out verify_fail "container ${n%%:*} ${n#*:}"; rc=1; done
     # crash loops: restart counts must hold still for VERIFY_SETTLE seconds
     c1=$(for n in $BEFORE_CTRS; do docker inspect -f '{{.Name}} {{.RestartCount}}' "$n" 2>/dev/null; done)
@@ -252,6 +257,16 @@ verify() {
     else out verify_fail "check failed: $cmd"; rc=1; fi
   done
   return $rc
+}
+
+# ---- weekly health (read-only) ---------------------------------------------
+health() {
+  # expected = running now + anything set to restart on its own (a stopped one is a problem)
+  BEFORE_CTRS=$( { docker ps --format '{{.Names}}' 2>/dev/null
+                   docker ps -aq 2>/dev/null | xargs -r docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}}' \
+                     | awk '$2=="always" || $2=="unless-stopped" {sub("/","",$1); print $1}'; } | sort -u)
+  BEFORE_FAILED=""                                      # every failed unit counts
+  HEAL=no VERIFY_WAIT=0 verify
 }
 
 # ---- discord ---------------------------------------------------------------
@@ -330,6 +345,7 @@ case "$verb" in
   ping)            echo ok ;;
   check)           os_check; containers_check ;;
   backups)         backups ;;
+  health)          health ;;
   apply)           apply "${2:-}" ;;
   save-state)      save_state ;;
   boot-check)      boot_check ;;

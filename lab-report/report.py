@@ -416,9 +416,15 @@ async def c_agents(power_now):
         if box and not power_now.get(box):
             out[h] = {"skipped": "powered off"}
             return
-        rows, rc = await agent(h, "check")
-        brows, _ = await agent(h, "backups", timeout=60)
-        r = {"manager": None, "os": [], "containers": [], "reboot": [], "errors": [], "backups": []}
+        (rows, rc), (brows, _), (hrows, _) = await asyncio.gather(
+            agent(h, "check"), agent(h, "backups", timeout=60), agent(h, "health", timeout=300))
+        r = {"manager": None, "os": [], "containers": [], "reboot": [], "errors": [], "backups": [],
+             "health_ok": [], "health_fail": []}
+        for row in hrows:
+            if row[0] == "verify_ok":
+                r["health_ok"].append(row[1])
+            elif row[0] in ("verify_fail", "error"):
+                r["health_fail"].append(row[1])
         for row in rows + brows:
             k, v = row[0], row[1:]
             if k == "os_manager":
@@ -613,6 +619,18 @@ def build(r):
             L(f"{'✅' if ok else '❌'} {h} {b['unit']}: {b['result']}, finished {ago(b['epoch'])}")
             if not ok:
                 attn.append(f"backup {b['unit']} on {h}: {b['result']}, last {ago(b['epoch'])}")
+
+    L("\n**Host health**  (containers that should run, crash loops, failed units, host checks)")
+    for h, a in (r["agents"] or {}).items():
+        if "skipped" in a:
+            continue
+        ok, bad = a.get("health_ok", []), a.get("health_fail", [])
+        if not ok and not bad:
+            L(f"⚠️ {h}: no health answer")
+            attn.append(f"{h}: health check gave no answer")
+            continue
+        L(f"{'✅' if not bad else '❌'} {h}: {len(ok)} ok" + (" · " + "; ".join(bad) if bad else ""))
+        attn += [f"{h}: {b}" for b in bad]
 
     L("\n**Containers**")
     for h, c in (r["containers"] or {}).items():
