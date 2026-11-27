@@ -348,7 +348,7 @@ case "$verb" in
   health)          health ;;
   apply)           apply "${2:-}" ;;
   save-state)      save_state ;;
-  boot-check)      boot_check ;;
+  boot-check)      boot_check; exit 0 ;;   # it reports; a failed unit would also skip save-state at shutdown
   apply-detached)
     unit="lab-agent-apply-$(date +%s)"
     systemd-run --quiet --collect --unit="$unit" /usr/local/sbin/lab-agent.sh apply --notify \
