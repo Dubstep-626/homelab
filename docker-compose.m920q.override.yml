@@ -4,11 +4,10 @@ services:
     container_name: n8n
     restart: unless-stopped
     environment:
-      - N8N_HOST=n8n.lab.lan
-      - N8N_PROTOCOL=http
+      - N8N_HOST=n8n.lab.mitchthedubs.com
+      - N8N_PROTOCOL=https
       - N8N_PORT=5678
-      - WEBHOOK_URL=http://n8n.lab.lan:8080/
-      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=https://n8n.lab.mitchthedubs.com/
       - N8N_PROXY_HOPS=1
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}

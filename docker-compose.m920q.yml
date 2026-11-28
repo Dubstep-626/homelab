@@ -40,12 +40,28 @@ services:
     networks:
       - homelab
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${NGINX_HTTP_PORT:-8080}:80"   # old http://*.lab.lan:8080 addresses
+      - "80:80"                         # http://*.lab.mitchthedubs.com -> redirected to https
+      - "443:443"                       # https://*.lab.mitchthedubs.com
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
       - ./nginx/certs:/etc/nginx/certs:ro
+      - ./certbot/letsencrypt:/etc/letsencrypt:ro
       - ./nginx/logs:/var/log/nginx
+    # reload every 6 h so certificates renewed by the certbot container are picked up
+    command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+
+  # Renews the wildcard *.lab.mitchthedubs.com certificate (DNS-01 via Cloudflare, see docs/HTTPS.md).
+  # First issue: docker compose run --rm --entrypoint certbot certbot certonly ... (docs/HTTPS.md)
+  certbot:
+    image: certbot/dns-cloudflare:latest
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/letsencrypt:/etc/letsencrypt
+      - ./certbot/cloudflare.ini:/cloudflare.ini:ro
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew -q --dns-cloudflare --dns-cloudflare-credentials /cloudflare.ini --dns-cloudflare-propagation-seconds 30; sleep 12h & wait $${!}; done"]
 
   fail2ban:
     image: crazymax/fail2ban:latest
@@ -149,7 +165,7 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-      - GF_SERVER_ROOT_URL=http://grafana.lab.lan:8080/
+      - GF_SERVER_ROOT_URL=https://grafana.lab.mitchthedubs.com/
       - GF_SERVER_SERVE_FROM_SUB_PATH=false
 
   unpoller:

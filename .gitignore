@@ -30,3 +30,7 @@ homepage-config/custom.js
 /docker-compose.yml
 /docker-compose.override.yml
 /docker-compose.orig.yml
+
+# HTTPS: Let's Encrypt state and the Cloudflare API token
+certbot/letsencrypt/
+certbot/cloudflare.ini

@@ -149,7 +149,7 @@
 
 - Monitoring:
     - Uptime Kuma:
-        href: http://status.lab.lan:8080
+        href: https://status.lab.mitchthedubs.com
         description: Service uptime + alerts (Discord)
         icon: uptime-kuma.png
         widget:
@@ -158,7 +158,7 @@
           slug: homelab
 
     - Grafana:
-        href: http://grafana.lab.lan:8080/d/rYdddlPWk/node-exporter-full?from=now-24h&to=now&timezone=browser&var-ds_prometheus=PBFA97CFB590B2093&var-job=node-exporter-t430&var-nodename=pve&var-node=192.168.0.10:9100&refresh=1m
+        href: https://grafana.lab.mitchthedubs.com/d/rYdddlPWk/node-exporter-full?from=now-24h&to=now&timezone=browser&var-ds_prometheus=PBFA97CFB590B2093&var-job=node-exporter-t430&var-nodename=pve&var-node=192.168.0.10:9100&refresh=1m
         description: Host dashboards (Node Exporter Full)
         icon: grafana.png
         siteMonitor: http://grafana:3000
@@ -171,7 +171,7 @@
           url: http://prometheus:9090
 
     - Netdata (Parent - all nodes):
-        href: http://netdata.lab.lan:8080
+        href: https://netdata.lab.mitchthedubs.com
         description: Real-time metrics - DXP2800, T430
         icon: netdata.png
         widget:
@@ -179,7 +179,7 @@
           url: http://192.168.0.172:19999
 
     - Scrutiny:
-        href: http://drives.lab.lan:8080
+        href: https://drives.lab.mitchthedubs.com
         description: Drive S.M.A.R.T. health
         icon: scrutiny.png
         widget:
@@ -187,7 +187,7 @@
           url: http://192.168.0.172:8082
 
     - Dozzle:
-        href: http://logs.lab.lan:8080
+        href: https://logs.lab.mitchthedubs.com
         description: Live container log viewer
         icon: dozzle.png
         siteMonitor: http://dozzle:8888
@@ -224,7 +224,7 @@
 - Control:
     - Lab Power:
         icon: mdi-power
-        href: http://control.lab.lan:8080/lab/
+        href: https://control.lab.mitchthedubs.com/lab/
         description: Lab Up / Lab Down - T430 + guests, X570 (M920q and NAS stay up)
         widgets:
           - type: customapi
@@ -239,7 +239,7 @@
                 label: X570
 
     - Server Control:
-        href: http://control.lab.lan:8080
+        href: https://control.lab.mitchthedubs.com
         description: Power T430 (iDRAC) / start-stop VMs (Proxmox)
         icon: mdi-server
 
@@ -295,7 +295,7 @@
                 suffix: "%"
 
     - X570 Workstation:
-        href: http://control.lab.lan:8080/x570/
+        href: https://control.lab.mitchthedubs.com/x570/
         description: deus-vult - Wake / Shut down (Fedora)
         icon: mdi-desktop-tower
         widgets:
@@ -343,7 +343,7 @@
 
     - Gaming mode:
         icon: mdi-controller
-        href: http://control.lab.lan:8080/x570/gaming
+        href: https://control.lab.mitchthedubs.com/x570/gaming
         description: Free the X570 GPU for games
         widget:
           type: customapi
@@ -354,7 +354,7 @@
 
     - Lockdown:
         icon: mdi-shield-lock
-        href: http://lockdown.lab.lan:8080
+        href: https://lockdown.lab.mitchthedubs.com
         description: Lock down the lab + scan for anything out of place
         widget:
           type: customapi
@@ -382,15 +382,15 @@
 
 - Cameras:
     - Scrypted:
-        href: http://scrypted.lab.lan:8080
+        href: https://scrypted.lab.mitchthedubs.com
         description: Blink camera live view (4x Mini/Mini 2)
         icon: scrypted.png
         ping: scrypted
 
 - Network:
     - AdGuard Home (M920q):
-        href: http://adguard.lab.lan:8080
-        description: Primary tailnet DNS - filtering, *.lab.lan rewrites
+        href: https://adguard.lab.mitchthedubs.com
+        description: Primary tailnet DNS - filtering, *.lab.lan + *.lab.mitchthedubs.com rewrites
         icon: adguard-home.png
         widget:
           type: adguard
@@ -430,7 +430,7 @@
 
 - Infrastructure:
     - Cloud Backup (rclone):
-        href: http://status.lab.lan:8080
+        href: https://status.lab.mitchthedubs.com
         description: Encrypted weekly to Google Drive (Sun 04:00, keeps 3) - status in Kuma
         icon: mdi-cloud-upload
 
