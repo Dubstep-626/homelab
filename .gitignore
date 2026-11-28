@@ -17,3 +17,16 @@ adguard/
 __pycache__/
 node_modules/
 lab-report/ssh/
+
+# Homepage writes these templates on first start; untracked unless customised
+homepage-config/logs/
+homepage-config/bookmarks.yaml
+homepage-config/docker.yaml
+homepage-config/kubernetes.yaml
+homepage-config/proxmox.yaml
+homepage-config/custom.css
+homepage-config/custom.js
+# per-host compose copies from before the git checkout
+/docker-compose.yml
+/docker-compose.override.yml
+/docker-compose.orig.yml
