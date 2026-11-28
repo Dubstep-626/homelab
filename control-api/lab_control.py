@@ -43,9 +43,9 @@ STATE_FILE = "/tmp/lab_run.json"
 LOCK_FILE = "/tmp/lab_run.lock"
 LOCK_STALE = 20 * 60          # s
 VM_STOP_WAIT = 180            # s, all guests together
-HOST_OFF_WAIT = 360           # s, T430 GracefulShutdown -> PowerState Off
-PVE_UP_WAIT = 900             # s, T430 power on -> Proxmox API answering (POST is slow)
-X570_UP_WAIT = 240            # s, WoL -> Fedora reachable
+HOST_OFF_WAIT = 240           # s, T430 GracefulShutdown -> PowerState Off
+PVE_UP_WAIT = 420             # s, T430 power on -> Proxmox API answering (POST is slow)
+X570_UP_WAIT = 180            # s, WoL -> Fedora reachable
 POLL = 10                     # s
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")  # optional: post a summary of real runs
 
