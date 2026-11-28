@@ -12,7 +12,7 @@
 #
 # Verbs (anything else is refused):
 #   ping            -> "ok"
-#   check           pending OS packages + container image updates (pulls images, changes nothing running)
+#   check           pending OS packages + container image updates (asks the registry; downloads nothing)
 #   backups         result/age of the systemd backup units in BACKUP_UNITS
 #   health          read-only version of the post-update verify, for the weekly report: containers
 #                   that should run (running now or set to restart) are up and healthy, no crash
@@ -127,10 +127,25 @@ os_apply() {
 }
 
 # ---- containers ------------------------------------------------------------
-# Pulls newer images for running, non-skipped services and prints
-# "<dir>\t<service>\t<image>" for every container whose image is now stale.
+# Registry digest of an image tag, without downloading it: buildx imagetools if present,
+# otherwise skopeo in a throwaway container (digest = sha256 of the raw manifest).
+remote_digest() {
+  local d=""
+  docker buildx version >/dev/null 2>&1 \
+    && d=$(docker buildx imagetools inspect "$1" 2>/dev/null | awk '/^Digest:/ {print $2; exit}')
+  if [ -z "$d" ]; then
+    d=$(docker run --rm quay.io/skopeo/stable:latest inspect --raw "docker://$1" 2>/dev/null | sha256sum | awk '{print "sha256:"$1}')
+    [ "$d" = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ] && d=""   # empty reply
+  fi
+  echo "$d"
+}
+
+# Prints "<dir>\t<service>\t<image>" for every running, non-skipped container whose image
+# is out of date. $1=pull: download newer images first (apply, after approval).
+# Default: compare with the registry and download nothing (check), so a later
+# `docker compose up` / deploy.sh can't roll in an update nobody approved.
 container_scan() {
-  local spec dir files f svcs s cid ref run cur missing
+  local mode=${1:-remote} spec dir files f svcs s cid ref run cur missing digests rd
   local -a fl
   for spec in $COMPOSE_DIRS; do
     dir=${spec%%:*}; files=()
@@ -147,14 +162,23 @@ container_scan() {
       [ -n "$s" ] && ! is_skipped "$s" && svcs+=("$s")
     done < <(cd "$dir" && docker compose "${files[@]}" ps --services --status running 2>/dev/null)
     [ ${#svcs[@]} -eq 0 ] && continue
-    (cd "$dir" && docker compose "${files[@]}" pull -q --ignore-pull-failures "${svcs[@]}" >/dev/null 2>&1)
+    [ "$mode" = pull ] && (cd "$dir" && docker compose "${files[@]}" pull -q --ignore-pull-failures "${svcs[@]}" >/dev/null 2>&1)
     for s in "${svcs[@]}"; do
       cid=$(cd "$dir" && docker compose "${files[@]}" ps -q "$s" 2>/dev/null | head -1)
       [ -n "$cid" ] || continue
       ref=$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null)
       run=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null)
       cur=$(docker image inspect -f '{{.Id}}' "$ref" 2>/dev/null)
-      [ -n "$cur" ] && [ "$cur" != "$run" ] && printf '%s\t%s\t%s\n' "$spec" "$s" "$ref"
+      digests=$(docker image inspect -f '{{range .RepoDigests}}{{.}} {{end}}' "$run" 2>/dev/null)
+      if [ "$mode" = pull ] || [ -z "$digests" ]; then
+        # after a pull, or a locally built image (no registry digest): compare with the local tag
+        [ -n "$cur" ] && [ "$cur" != "$run" ] && printf '%s\t%s\t%s\n' "$spec" "$s" "$ref"
+      else
+        rd=$(remote_digest "$ref")
+        if [ -z "$rd" ]; then printf 'error\tregistry unreachable for %s\t\n' "$ref"
+        elif ! grep -q "${rd#sha256:}" <<<"$digests"; then printf '%s\t%s\t%s\n' "$spec" "$s" "$ref"
+        fi
+      fi
     done
   done
 }
@@ -170,7 +194,7 @@ containers_apply() {
   declare -A todo=()
   while IFS="$TAB" read -r spec s ref; do
     if [ "$spec" = error ]; then out failed "$s"; rc=1; else todo[$spec]+="$s "; fi
-  done < <(container_scan)
+  done < <(container_scan pull)
   for spec in "${!todo[@]}"; do
     dir=${spec%%:*}; files=()
     if [ "$spec" != "$dir" ]; then
