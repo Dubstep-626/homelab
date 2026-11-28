@@ -147,6 +147,7 @@ remote_digest() {
 container_scan() {
   local mode=${1:-remote} spec dir files f svcs s cid ref run cur missing digests rd
   local -a fl
+  local built
   for spec in $COMPOSE_DIRS; do
     dir=${spec%%:*}; files=()
     if [ "$spec" != "$dir" ]; then
@@ -170,8 +171,11 @@ container_scan() {
       run=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null)
       cur=$(docker image inspect -f '{{.Id}}' "$ref" 2>/dev/null)
       digests=$(docker image inspect -f '{{range .RepoDigests}}{{.}} {{end}}' "$run" 2>/dev/null)
-      if [ "$mode" = pull ] || [ -z "$digests" ]; then
-        # after a pull, or a locally built image (no registry digest): compare with the local tag
+      # compose labels the images it builds; Docker's containerd image store gives those
+      # RepoDigests too, so the digest list alone can't tell a local build from a registry image
+      built=$(docker image inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$run" 2>/dev/null)
+      if [ "$mode" = pull ] || [ -n "$built" ] || [ -z "$digests" ]; then
+        # after a pull, or a locally built image: compare with the local tag
         [ -n "$cur" ] && [ "$cur" != "$run" ] && printf '%s\t%s\t%s\n' "$spec" "$s" "$ref"
       else
         rd=$(remote_digest "$ref")
