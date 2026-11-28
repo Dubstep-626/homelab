@@ -5,7 +5,6 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "jarvis-action",
-        "responseMode": "onReceived",
         "options": {}
       },
       "name": "Webhook",
@@ -13,21 +12,23 @@
       "typeVersion": 2,
       "position": [
         0,
-        0
+        128
       ],
-      "webhookId": "jarvis-action"
+      "webhookId": "jarvis-action",
+      "id": "ef095bf3-2a05-4eaf-8d67-db87fc859f6b"
     },
     {
       "parameters": {
-        "jsCode": "const b = $('Webhook').first().json.body || {};\nconst map = {\n  wake_x570:     { url: 'http://control-api:5000/x570/wake',       body: {},                           label: 'Wake the X570 (deus-vult)' },\n  shutdown_x570: { url: 'http://control-api:5000/x570/shutdown',   body: {},                           label: 'Shut down the X570 (deus-vult)' },\n  power_on_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'On' },              label: 'Power on the T430 (pve)' },\n  shutdown_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'GracefulShutdown' }, label: 'Gracefully shut down the T430 (pve)' },\n  lockdown_off:  { url: 'http://jarvis-sentinel:8000/lockdown/off', body: {},                    label: 'Turn OFF lab lockdown' },\n};\nconst m = map[b.action];\nif (!m) throw new Error('Unknown action: ' + b.action);\nreturn [{ json: { ...m, action: b.action, reason: b.reason || '' } }];"
+        "jsCode": "const b = $('Webhook').first().json.body || {};\nconst map = {\n  wake_x570:     { url: 'http://control-api:5000/x570/wake',       body: {},                           label: 'Wake the X570 (deus-vult)' },\n  shutdown_x570: { url: 'http://control-api:5000/x570/shutdown',   body: {},                           label: 'Shut down the X570 (deus-vult)' },\n  power_on_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'On' },              label: 'Power on the T430 (pve)' },\n  shutdown_t430: { url: 'http://control-api:5000/api/idrac/power', body: { action: 'GracefulShutdown' }, label: 'Gracefully shut down the T430 (pve)' },\n  lockdown_off: { url: 'http://jarvis-sentinel:8000/lockdown/off', body: {}, label: 'Turn OFF lab lockdown' },\n  lab_up:        { url: 'http://control-api:5000/lab/up',          body: {},                           label: 'Lab Up (wake X570, power on T430)' },\n  lab_down:      { url: 'http://control-api:5000/lab/down',        body: {},                           label: 'Lab Down (X570, Proxmox guests, then T430)' },\n};\nconst m = map[b.action];\nif (!m) throw new Error('Unknown action: ' + b.action);\nreturn [{ json: { ...m, action: b.action, reason: b.reason || '' } }];"
       },
       "name": "Map action",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
-        0
-      ]
+        224,
+        128
+      ],
+      "id": "12dc59e5-1625-40c6-9a15-481b2d83df63"
     },
     {
       "parameters": {
@@ -57,9 +58,17 @@
       "type": "n8n-nodes-base.discord",
       "typeVersion": 2,
       "position": [
-        440,
-        0
-      ]
+        448,
+        128
+      ],
+      "id": "01e2fe82-a1a6-48c6-bb96-7526e2913ee5",
+      "webhookId": "7ac1f0fa-7c27-4378-89ca-11b5ea3e5162",
+      "credentials": {
+        "discordBotApi": {
+          "id": "CbwHTMCFOREyLl8t",
+          "name": "Discord Bot account"
+        }
+      }
     },
     {
       "parameters": {
@@ -67,7 +76,8 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose"
+            "typeValidation": "loose",
+            "version": 1
           },
           "conditions": [
             {
@@ -89,20 +99,17 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        660,
-        0
-      ]
+        656,
+        128
+      ],
+      "id": "33ac374b-84fb-4b8a-8749-6c2cdbdbf699"
     },
     {
       "parameters": {
         "method": "POST",
         "url": "={{ $('Map action').first().json.url }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($('Map action').first().json.body) }}",
-        "options": {
-          "timeout": 30000
-        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -111,6 +118,12 @@
               "value": "Bearer PASTE_CONTROL_API_TOKEN_HERE"
             }
           ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Map action').first().json.body) }}",
+        "options": {
+          "timeout": 30000
         }
       },
       "name": "Run action",
@@ -118,14 +131,20 @@
       "typeVersion": 4.2,
       "position": [
         880,
-        -120
+        0
       ],
+      "id": "b1a5211b-e6f5-4452-b227-267097729fb5",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kfoZXY9kZf8iGuVK",
+          "name": "Header Auth account 2"
+        }
+      },
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "resource": "message",
-        "operation": "send",
         "guildId": {
           "__rl": true,
           "value": "1556147688309788692",
@@ -136,22 +155,29 @@
           "value": "1572176540962259035",
           "mode": "id"
         },
-        "content": "={{ $json.error ? '\u26a0\ufe0f ' + $('Map action').first().json.label + ' failed: ' + ($json.error.message || JSON.stringify($json.error)) : '\u2705 Done: ' + $('Map action').first().json.label }}",
+        "content": "={{ $json.error ? '⚠️ ' + $('Map action').first().json.label + ' failed: ' + ($json.error.message || JSON.stringify($json.error)) : ($('Map action').first().json.action.startsWith('lab_') ? '▶️ Started: ' + $('Map action').first().json.label + ' - Lab Power will post the log when it finishes' : '✅ Done: ' + $('Map action').first().json.label) }}",
         "options": {}
       },
       "name": "Discord: result",
       "type": "n8n-nodes-base.discord",
       "typeVersion": 2,
       "position": [
-        1100,
-        -120
+        1104,
+        0
       ],
+      "id": "17d97779-30d2-44f5-b8c4-e0babedd8bfb",
+      "webhookId": "73c9890a-3ee8-4509-8620-95b7ea4a5b24",
+      "credentials": {
+        "discordBotApi": {
+          "id": "CbwHTMCFOREyLl8t",
+          "name": "Discord Bot account"
+        }
+      },
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "resource": "message",
-        "operation": "send",
         "guildId": {
           "__rl": true,
           "value": "1556147688309788692",
@@ -162,7 +188,7 @@
           "value": "1572176540962259035",
           "mode": "id"
         },
-        "content": "={{ '\u274c Denied: ' + $('Map action').first().json.label }}",
+        "content": "={{ '❌ Denied: ' + $('Map action').first().json.label }}",
         "options": {}
       },
       "name": "Discord: denied",
@@ -170,8 +196,16 @@
       "typeVersion": 2,
       "position": [
         880,
-        120
+        240
       ],
+      "id": "30201860-717c-48c3-8237-a7118613d128",
+      "webhookId": "876944a9-e849-4c2d-9f96-b03993c6363f",
+      "credentials": {
+        "discordBotApi": {
+          "id": "CbwHTMCFOREyLl8t",
+          "name": "Discord Bot account"
+        }
+      },
       "onError": "continueRegularOutput"
     }
   ],
@@ -240,6 +274,7 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   }
 }
